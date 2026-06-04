@@ -1,0 +1,228 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #050508;
+  --foreground: #F4F8F2;
+  --card: #0a0d14;
+  --card-foreground: #F4F8F2;
+  --popover: #0a0d14;
+  --popover-foreground: #F4F8F2;
+  --primary: #00D4FF;
+  --primary-foreground: #050508;
+  --secondary: #0d1520;
+  --secondary-foreground: #F4F8F2;
+  --muted: #0d1520;
+  --muted-foreground: #6b7f8a;
+  --accent: #00FFB2;
+  --accent-foreground: #050508;
+  --destructive: #ff4444;
+  --destructive-foreground: #ffffff;
+  --border: rgba(0, 212, 255, 0.12);
+  --input: #0d1520;
+  --ring: rgba(0, 212, 255, 0.5);
+  --radius: 0.75rem;
+  --sidebar: #080b10;
+  --sidebar-foreground: #F4F8F2;
+  --sidebar-primary: #00D4FF;
+  --sidebar-primary-foreground: #050508;
+  --sidebar-accent: #0d1520;
+  --sidebar-accent-foreground: #F4F8F2;
+  --sidebar-border: rgba(0, 212, 255, 0.12);
+  --sidebar-ring: rgba(0, 212, 255, 0.5);
+}
+
+@theme inline {
+  --font-sans: 'Geist', 'Geist Fallback', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback', monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    background: #050508;
+  }
+}
+
+nextjs-portal {
+  display: none !important;
+}
+
+/* ═══════════════════════════════════════════
+   BELOTE ROYALE — FUTURISTIC PREMIUM THEME
+   ═══════════════════════════════════════════ */
+
+/* Glow effects */
+@keyframes cyan-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes glow-border {
+  0%, 100% { box-shadow: 0 0 8px rgba(0, 212, 255, 0.3), inset 0 0 8px rgba(0, 212, 255, 0.05); }
+  50% { box-shadow: 0 0 20px rgba(0, 212, 255, 0.5), inset 0 0 12px rgba(0, 212, 255, 0.1); }
+}
+
+@keyframes float-diamond {
+  0%, 100% { transform: translateY(0) rotate(45deg); }
+  50% { transform: translateY(-10px) rotate(45deg); }
+}
+
+@keyframes card-shine {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes active-ring {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.2), 0 0 15px rgba(0, 212, 255, 0.3); }
+  50% { box-shadow: 0 0 0 5px rgba(0, 212, 255, 0.4), 0 0 30px rgba(0, 212, 255, 0.5); }
+}
+
+/* Premium card component */
+.premium-card {
+  background: linear-gradient(135deg, #0a0d14 0%, #0d1520 100%);
+  border: 1px solid rgba(0, 212, 255, 0.12);
+  transition: all 0.2s ease;
+}
+.premium-card:hover {
+  border-color: rgba(0, 212, 255, 0.4);
+  box-shadow: 0 0 30px rgba(0, 212, 255, 0.1), inset 0 0 30px rgba(0, 212, 255, 0.02);
+}
+
+/* Felt table with futuristic look */
+.felt-table {
+  background: radial-gradient(ellipse at center, #0c1a2a 0%, #081220 40%, #050a14 100%);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  box-shadow: inset 0 0 100px rgba(0, 212, 255, 0.03), 0 0 60px rgba(0, 212, 255, 0.05);
+}
+
+/* Playing card styles */
+.playing-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f0ebe3 100%);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.playing-card.playable {
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.4), 0 4px 12px rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(0, 212, 255, 0.6);
+}
+.playing-card.playable:hover {
+  transform: translateY(-16px) scale(1.08);
+  box-shadow: 0 0 24px rgba(0, 212, 255, 0.6), 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* Card back */
+.card-back {
+  background: linear-gradient(135deg, #0a1628 0%, #0d1f3d 50%, #0a1628 100%);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.card-back::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 5px;
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    rgba(0, 212, 255, 0.04) 4px,
+    rgba(0, 212, 255, 0.04) 8px
+  );
+}
+
+/* Active player glow */
+.active-player-glow {
+  animation: active-ring 2s ease-in-out infinite;
+}
+
+/* Floating diamond decorations */
+.float-diamond {
+  animation: float-diamond 6s ease-in-out infinite;
+}
+
+/* Button glow */
+.btn-glow {
+  background: linear-gradient(135deg, #00D4FF 0%, #00FFB2 100%);
+  color: #050508;
+  font-weight: 700;
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+  transition: all 0.2s ease;
+}
+.btn-glow:hover {
+  box-shadow: 0 0 40px rgba(0, 212, 255, 0.5);
+  transform: translateY(-1px);
+}
+.btn-glow:active {
+  transform: scale(0.97);
+}
+
+/* Text gradient */
+.text-gradient-cyan {
+  background: linear-gradient(135deg, #00D4FF 0%, #00FFB2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Announcement popup */
+@keyframes announce-in {
+  0% { transform: scale(0.5); opacity: 0; }
+  60% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.announce-popup {
+  animation: announce-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Chat bubble */
+.chat-bubble {
+  background: rgba(0, 212, 255, 0.08);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  border-radius: 12px 12px 12px 4px;
+}
+
+/* Score bar progress */
+.score-bar {
+  background: linear-gradient(90deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 212, 255, 0.05) 100%);
+  border-bottom: 2px solid rgba(0, 212, 255, 0.3);
+}
