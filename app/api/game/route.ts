@@ -74,6 +74,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: 'Seul le créateur peut démarrer' }, { status: 403 });
         }
         if (room.players.length < 4) {
+          // Auto-fill with bots
           gameManager.fillWithBots(room);
         }
         const gameState = gameManager.startGame(roomId);
@@ -86,10 +87,7 @@ export async function POST(req: NextRequest) {
         const room = gameManager.rooms.get(roomId);
         if (!room) return NextResponse.json({ gameState: null, room: null });
         if (!room.gameState) return NextResponse.json({ gameState: null, room });
-
-        // FIX: Assurer que les bots jouent à chaque get_state (sécurité cold start)
-        gameManager.ensureBotsPlayed(roomId);
-
+        
         const gs = room.gameState;
         const playerIdx = gs.players.findIndex(p => p.id === playerId);
         const hand = playerIdx >= 0 ? gs.players[playerIdx].hand : [];
@@ -98,6 +96,7 @@ export async function POST(req: NextRequest) {
           playable = getPlayableCards(hand, gs.currentTrick, gs.trumpSuit, playerIdx).map(c => c.id);
         }
 
+        // Annonces
         const announcements = gameManager.gameAnnouncements.get(gs.id) || [];
 
         return NextResponse.json({
@@ -124,8 +123,8 @@ export async function POST(req: NextRequest) {
       }
 
       case 'play_card': {
-        const { roomId, playerIndex, cardId, playerId } = body;
-        const gs = gameManager.handlePlayCard(roomId, playerIndex, cardId, playerId);
+        const { roomId, playerIndex, cardId } = body;
+        const gs = gameManager.handlePlayCard(roomId, playerIndex, cardId);
         if (!gs) return NextResponse.json({ error: 'Coup invalide' }, { status: 400 });
         return NextResponse.json({ success: true });
       }
@@ -147,11 +146,8 @@ export async function POST(req: NextRequest) {
 
       case 'next_round': {
         const { roomId } = body;
-        const room = gameManager.rooms.get(roomId);
-        // FIX: Si la room n'existe plus (cold start), retourner null proprement
-        if (!room?.gameState) return NextResponse.json({ gameState: null });
         const gameState = gameManager.handleNextRound(roomId);
-        return NextResponse.json({ gameState: gameState ? sanitizeGameState(gameState, '') : null });
+        return NextResponse.json({ gameState });
       }
 
       default:

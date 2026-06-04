@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
 import type { Room, GameState, Card } from '@/lib/belote/types';
 
 interface BeloteStore {
@@ -40,43 +39,37 @@ const initialState = {
   connected: false,
 };
 
-export const useGameStore = create<BeloteStore>()(
-  persist(
-    (set) => ({
-      ...initialState,
+export const useGameStore = create<BeloteStore>((set) => ({
+  ...initialState,
 
-      setPlayerName: (name: string) => {
-        const id = crypto.randomUUID();
-        set({ playerId: id, playerName: name });
-      },
+  setPlayerName: (name: string) => {
+    const id = crypto.randomUUID();
+    sessionStorage.setItem('playerId', id);
+    sessionStorage.setItem('playerName', name);
+    set({ playerId: id, playerName: name });
+  },
 
-      loadFromSession: () => {
-        // Already loaded from localStorage via persist
-      },
-
-      setRoom: (room) => set({ currentRoom: room }),
-
-      setGameState: (state) => {
-        if (!state) return set({ gameState: null, isMyTurn: false, myPosition: null });
-        const playerId = useGameStore.getState().playerId;
-        const myPosition = state.players.findIndex((p) => p.id === playerId);
-        const isMyTurn = state.currentPlayerIndex === myPosition;
-        set({ gameState: state, isMyTurn, myPosition: myPosition >= 0 ? myPosition : null });
-      },
-
-      setMyHand: (hand) => set({ myHand: hand }),
-      setPlayableCards: (cards) => set({ playableCards: cards }),
-      setError: (error) => set({ error }),
-      setConnected: (connected) => set({ connected }),
-      reset: () => set({ ...initialState }),
-    }),
-    {
-      name: 'belote-store',
-      storage: createJSONStorage(() => (typeof window !== 'undefined' ? localStorage : sessionStorage)),
-      partialize: (state) => ({
-        playerId: state.playerId,
-        playerName: state.playerName,
-      }),
+  loadFromSession: () => {
+    const playerId = sessionStorage.getItem('playerId');
+    const playerName = sessionStorage.getItem('playerName');
+    if (playerId && playerName) {
+      set({ playerId, playerName });
     }
-  )
-);
+  },
+
+  setRoom: (room) => set({ currentRoom: room }),
+
+  setGameState: (state) => {
+    if (!state) return set({ gameState: null, isMyTurn: false, myPosition: null });
+    const playerId = useGameStore.getState().playerId;
+    const myPosition = state.players.findIndex((p) => p.id === playerId);
+    const isMyTurn = state.currentPlayerIndex === myPosition;
+    set({ gameState: state, isMyTurn, myPosition: myPosition >= 0 ? myPosition : null });
+  },
+
+  setMyHand: (hand) => set({ myHand: hand }),
+  setPlayableCards: (cards) => set({ playableCards: cards }),
+  setError: (error) => set({ error }),
+  setConnected: (connected) => set({ connected }),
+  reset: () => set({ ...initialState }),
+}));

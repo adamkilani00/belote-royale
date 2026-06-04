@@ -1,19 +1,19 @@
-// Gestionnaire d'état du jeu — Version finale corrigée
-// Compatible Vercel Serverless via globalThis singleton
-// Bots exécutés SYNCHRONIQUEMENT (pas de setTimeout serveur)
+// Gestionnaire d'état du jeu côté serveur — Version Premium
 import {
-  Room, GameState, GameMode, Player, Suit, Card,
+  Room, GameState, GameMode, Player, Suit, Trick, Card,
   BiddingState, TrumpSelection, GamePhase
 } from './types';
 import {
-  createDeck, shuffleDeck, determineTrickWinner,
+  createDeck, shuffleDeck, dealCards, determineTrickWinner,
   calculateRoundPoints, getPlayableCards, hasBeloteRebelote, getCardValue
 } from './engine';
 import { aiChooseCard, aiChooseBid, aiChooseTrump, createAIMemory, updateMemory } from './ai';
 import { detectAnnouncements, resolveAnnouncements, Announcement } from './announcements';
 
+// Noms des bots IA
 const BOT_NAMES = ['Aria', 'Nova', 'Solal', 'Echo', 'Luna', 'Orion'];
 
+// Messages de chat
 export interface ChatMessage {
   id: string;
   sender: string;
@@ -25,20 +25,29 @@ export interface ChatMessage {
 class GameManager {
   rooms: Map<string, Room> = new Map();
   playerToRoom: Map<string, string> = new Map();
-  pseudoToPlayer: Map<string, string> = new Map();
+  // Reconnexion par pseudo
+  pseudoToPlayer: Map<string, string> = new Map(); // pseudo -> playerId
+  // Chat par salon
   roomChats: Map<string, ChatMessage[]> = new Map();
+  // IA mémoire par partie
   aiMemories: Map<string, ReturnType<typeof createAIMemory>> = new Map();
+  // Annonces par partie
   gameAnnouncements: Map<string, Announcement[]> = new Map();
 
   generateCode(): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let code = '';
-    for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    for (let i = 0; i < 6; i++) {
+      code += chars[Math.floor(Math.random() * chars.length)];
+    }
     return code;
   }
 
+  /** Crée un salon — avec option de remplir par des bots */
   createRoom(playerId: string, playerName: string, mode: GameMode, isPrivate: boolean, targetScore: number, fillBots?: boolean): Room {
+    // Enregistrer le pseudo pour reconnexion
     this.pseudoToPlayer.set(playerName.toLowerCase(), playerId);
+
     const room: Room = {
       id: crypto.randomUUID(),
       code: this.generateCode(),
@@ -54,10 +63,16 @@ class GameManager {
     this.rooms.set(room.id, room);
     this.playerToRoom.set(playerId, room.id);
     this.roomChats.set(room.id, []);
-    if (fillBots) this.fillWithBots(room);
+
+    // Remplir avec des bots si demandé
+    if (fillBots) {
+      this.fillWithBots(room);
+    }
+
     return room;
   }
 
+  /** Remplit un salon avec des bots IA */
   fillWithBots(room: Room): void {
     let botIdx = 0;
     while (room.players.length < 4) {
@@ -68,24 +83,30 @@ class GameManager {
     }
   }
 
+  /** Rejoindre un salon */
   joinRoom(roomId: string, playerId: string, playerName: string): Room | null {
     const room = this.rooms.get(roomId);
     if (!room || room.players.length >= 4) return null;
     if (room.players.find(p => p.id === playerId)) return room;
+    
     this.pseudoToPlayer.set(playerName.toLowerCase(), playerId);
     room.players.push({ id: playerId, name: playerName, ready: false });
     this.playerToRoom.set(playerId, roomId);
     return room;
   }
 
+  /** Reconnexion par pseudo */
   reconnectByPseudo(pseudo: string, newPlayerId: string): { room: Room; playerIndex: number } | null {
     const oldPlayerId = this.pseudoToPlayer.get(pseudo.toLowerCase());
     if (!oldPlayerId) return null;
+    
     const roomId = this.playerToRoom.get(oldPlayerId);
     if (!roomId) return null;
+    
     const room = this.rooms.get(roomId);
     if (!room) return null;
 
+    // Remplacer l'ancien ID par le nouveau
     const playerInRoom = room.players.find(p => p.id === oldPlayerId);
     if (playerInRoom) {
       playerInRoom.id = newPlayerId;
@@ -94,6 +115,7 @@ class GameManager {
       this.pseudoToPlayer.set(pseudo.toLowerCase(), newPlayerId);
     }
 
+    // Mettre à jour dans le gameState aussi
     if (room.gameState) {
       const gamePlayer = room.gameState.players.find(p => p.id === oldPlayerId);
       if (gamePlayer) {
@@ -103,10 +125,12 @@ class GameManager {
         return { room, playerIndex: idx };
       }
     }
+
     const idx = room.players.findIndex(p => p.id === newPlayerId);
     return { room, playerIndex: idx };
   }
 
+  /** Quitter un salon */
   leaveRoom(playerId: string): { room: Room | null; destroyed: boolean } {
     const roomId = this.playerToRoom.get(playerId);
     if (!roomId) return { room: null, destroyed: false };
@@ -120,16 +144,19 @@ class GameManager {
       return { room, destroyed: true };
     }
 
+    // Pendant une partie, marquer comme déconnecté mais garder le slot
     if (room.gameState) {
       const player = room.gameState.players.find(p => p.id === playerId);
       if (player) player.connected = false;
       return { room, destroyed: false };
     }
+
     room.players = room.players.filter(p => p.id !== playerId);
     this.playerToRoom.delete(playerId);
     return { room, destroyed: false };
   }
 
+  /** Chat */
   addChatMessage(roomId: string, sender: string, text: string, isSystem?: boolean): ChatMessage {
     const msg: ChatMessage = {
       id: crypto.randomUUID(),
@@ -157,17 +184,20 @@ class GameManager {
     return Array.from(this.rooms.values()).find(r => r.code === code) || null;
   }
 
+  /** Démarre la partie */
   startGame(roomId: string): GameState | null {
     const room = this.rooms.get(roomId);
     if (!room || room.players.length !== 4) return null;
+
     const players: Player[] = room.players.map((p, i) => ({
       id: p.id,
       name: p.name,
       position: i as 0 | 1 | 2 | 3,
-      team: (i % 2) as 0 | 1,
+      team: (i % 2) as 0 | 1, // 0&2 = Nous, 1&3 = Eux
       hand: [],
       connected: true,
     }));
+
     const dealerIndex = 0;
     const gameState: GameState = {
       id: crypto.randomUUID(),
@@ -189,28 +219,38 @@ class GameManager {
       beloteAnnounced: [],
       roundNumber: 1,
     };
+
+    // Initialiser la mémoire IA
     this.aiMemories.set(gameState.id, createAIMemory());
     this.gameAnnouncements.set(gameState.id, []);
+
     this.dealForMode(gameState);
     room.gameState = gameState;
+
+    // Message système
     this.addChatMessage(roomId, 'Système', 'La partie commence ! Bonne chance.', true);
-    // FIX: Exécuter les bots synchroniquement après le démarrage
-    this.runBotsSync(roomId);
+
+    // Si c'est un bot qui doit jouer en premier, faire jouer l'IA
+    this.processBotsIfNeeded(room);
+
     return gameState;
   }
 
+  /** Distribution selon le mode — RÈGLES OFFICIELLES */
   private dealForMode(gameState: GameState): void {
-    // FIX: Utiliser UN seul deck pour toute la distribution
     const deck = shuffleDeck(createDeck());
     const { dealerIndex } = gameState;
     const order = [0, 1, 2, 3].map(i => (dealerIndex + 1 + i) % 4);
 
     if (gameState.mode === 'simple') {
+      // Mode Simple : 5 cartes → retourne → puis 3 cartes après la prise
       let cardIndex = 0;
       for (const pi of order) {
+        // Distribuer par 3 puis 2 (règle classique : 3+2)
         gameState.players[pi].hand = deck.slice(cardIndex, cardIndex + 5);
         cardIndex += 5;
       }
+      // La 21ème carte est la retourne
       const turnedCard = deck[20];
       gameState.turnedCard = turnedCard;
       gameState.phase = 'trump_selection';
@@ -222,10 +262,9 @@ class GameManager {
         takerPlayerIndex: null,
         passes: 0,
       };
-      // Stocker les cartes restantes pour la distribution complète
-      (gameState as any).__remainingDeck = deck.slice(21);
       gameState.currentPlayerIndex = (dealerIndex + 1) % 4;
     } else {
+      // Mode Contrée : 8 cartes à chacun
       let cardIndex = 0;
       for (const pi of order) {
         gameState.players[pi].hand = deck.slice(cardIndex, cardIndex + 8);
@@ -247,6 +286,7 @@ class GameManager {
     }
   }
 
+  /** Gestion de la sélection d'atout (mode Simple) */
   handleTrumpSelection(roomId: string, playerIndex: number, action: 'take' | 'pass', suit?: Suit): GameState | null {
     const room = this.rooms.get(roomId);
     if (!room?.gameState) return null;
@@ -262,17 +302,19 @@ class GameManager {
         ts.passes = 0;
         ts.currentPlayerIndex = (gs.dealerIndex + 1) % 4;
       } else if (ts.phase === 'second_round' && ts.passes === 4) {
+        // Redistribution
         this.startNewRound(gs);
-        this.runBotsSync(roomId);
+        this.processBotsIfNeeded(room);
         return gs;
       } else {
         ts.currentPlayerIndex = (ts.currentPlayerIndex + 1) % 4;
       }
       gs.currentPlayerIndex = ts.currentPlayerIndex;
-      this.runBotsSync(roomId);
+      this.processBotsIfNeeded(room);
       return gs;
     }
 
+    // Prendre
     const turnedCard = ts.turnedCard!;
     if (ts.phase === 'first_round') {
       gs.trumpSuit = turnedCard.suit;
@@ -280,54 +322,59 @@ class GameManager {
       if (!suit || suit === turnedCard.suit) return null;
       gs.trumpSuit = suit;
     }
+
     ts.takerPlayerIndex = playerIndex;
     ts.selectedSuit = gs.trumpSuit;
     ts.phase = 'done';
 
+    // Compléter la distribution
     this.completeDealSimple(gs, playerIndex);
+    
+    // Détecter les annonces
     this.detectAllAnnouncements(gs);
 
     gs.phase = 'playing';
     gs.currentPlayerIndex = (gs.dealerIndex + 1) % 4;
     gs.currentTrick = { cards: [], leaderIndex: gs.currentPlayerIndex, winnerIndex: null };
 
-    this.runBotsSync(roomId);
+    this.processBotsIfNeeded(room);
     return gs;
   }
 
+  /** Complète la distribution après prise (mode Simple) */
   private completeDealSimple(gs: GameState, takerIndex: number): void {
-    // FIX CRITIQUE: Utiliser le deck restant stocké, pas un nouveau deck
-    // Si le deck restant est disponible, l'utiliser
-    const remainingDeck: Card[] = (gs as any).__remainingDeck || [];
-    
-    // Si pas de deck stocké (cas de reconnexion), reconstruire depuis les cartes connues
-    if (remainingDeck.length === 0) {
-      const fullDeck = createDeck();
-      const usedIds = new Set<string>();
-      gs.players.forEach(p => p.hand.forEach(c => usedIds.add(c.id)));
-      if (gs.turnedCard) usedIds.add(gs.turnedCard.id);
-      const remaining = shuffleDeck(fullDeck.filter(c => !usedIds.has(c.id)));
-      remainingDeck.push(...remaining);
-    }
+    // Recréer le deck pour trouver les cartes restantes
+    const deck = shuffleDeck(createDeck());
+    const usedIds = new Set<string>();
+    gs.players.forEach(p => p.hand.forEach(c => usedIds.add(c.id)));
+    if (gs.turnedCard) usedIds.add(gs.turnedCard.id);
 
+    const remaining = deck.filter(c => !usedIds.has(c.id));
     const order = [0, 1, 2, 3].map(i => (gs.dealerIndex + 1 + i) % 4);
-    let cardIdx = 0;
 
+    let cardIdx = 0;
     for (const pi of order) {
       if (pi === takerIndex) {
+        // Le preneur reçoit la retourne + 2 cartes du talon
         gs.players[pi].hand.push(gs.turnedCard!);
-        gs.players[pi].hand.push(remainingDeck[cardIdx++]);
-        gs.players[pi].hand.push(remainingDeck[cardIdx++]);
+        gs.players[pi].hand.push(remaining[cardIdx++]);
+        gs.players[pi].hand.push(remaining[cardIdx++]);
       } else {
-        gs.players[pi].hand.push(remainingDeck[cardIdx++]);
-        gs.players[pi].hand.push(remainingDeck[cardIdx++]);
-        gs.players[pi].hand.push(remainingDeck[cardIdx++]);
+        gs.players[pi].hand.push(remaining[cardIdx++]);
+        gs.players[pi].hand.push(remaining[cardIdx++]);
+        gs.players[pi].hand.push(remaining[cardIdx++]);
       }
     }
-    // Nettoyer le deck temporaire
-    delete (gs as any).__remainingDeck;
+
+    // Vérification : chaque joueur doit avoir exactement 8 cartes
+    for (const p of gs.players) {
+      if (p.hand.length !== 8) {
+        console.error(`ERREUR: Joueur ${p.name} a ${p.hand.length} cartes au lieu de 8!`);
+      }
+    }
   }
 
+  /** Détecte les annonces de tous les joueurs */
   private detectAllAnnouncements(gs: GameState): void {
     if (!gs.trumpSuit) return;
     const allAnnouncements: Announcement[] = [];
@@ -338,6 +385,7 @@ class GameManager {
     this.gameAnnouncements.set(gs.id, allAnnouncements);
   }
 
+  /** Gestion des enchères (mode Contrée) */
   handleBid(roomId: string, playerIndex: number, action: 'bid' | 'pass' | 'contre' | 'surcontre', value?: number, suit?: Suit): GameState | null {
     const room = this.rooms.get(roomId);
     if (!room?.gameState) return null;
@@ -360,17 +408,18 @@ class GameManager {
       bs.passes++;
       if (!bs.highestBid && bs.passes === 4) {
         this.startNewRound(gs);
-        this.runBotsSync(roomId);
+        this.processBotsIfNeeded(room);
         return gs;
       }
       if (bs.highestBid && bs.passes === 3) {
+        // Enchères terminées
         bs.declarerIndex = bs.highestBid.playerIndex;
         gs.trumpSuit = bs.highestBid.suit;
         gs.phase = 'playing';
         gs.currentPlayerIndex = (gs.dealerIndex + 1) % 4;
         gs.currentTrick = { cards: [], leaderIndex: gs.currentPlayerIndex, winnerIndex: null };
         this.detectAllAnnouncements(gs);
-        this.runBotsSync(roomId);
+        this.processBotsIfNeeded(room);
         return gs;
       }
       bs.currentPlayerIndex = (playerIndex + 1) % 4;
@@ -391,17 +440,15 @@ class GameManager {
     }
 
     gs.currentPlayerIndex = bs.currentPlayerIndex;
-    this.runBotsSync(roomId);
+    this.processBotsIfNeeded(room);
     return gs;
   }
 
-  handlePlayCard(roomId: string, playerIndex: number, cardId: string, playerId: string): GameState | null {
+  /** Jouer une carte */
+  handlePlayCard(roomId: string, playerIndex: number, cardId: string): GameState | null {
     const room = this.rooms.get(roomId);
     if (!room?.gameState) return null;
     const gs = room.gameState;
-
-    // FIX: Vérification d'identité sécurisée
-    if (gs.players[playerIndex]?.id !== playerId) return null;
     if (gs.phase !== 'playing' || gs.currentPlayerIndex !== playerIndex) return null;
     if (!gs.currentTrick || !gs.trumpSuit) return null;
 
@@ -409,19 +456,25 @@ class GameManager {
     const card = player.hand.find(c => c.id === cardId);
     if (!card) return null;
 
+    // Vérifier que la carte est jouable (règles strictes)
     const playable = getPlayableCards(player.hand, gs.currentTrick, gs.trumpSuit, playerIndex);
     if (!playable.find(c => c.id === cardId)) return null;
 
+    // Retirer et jouer
     player.hand = player.hand.filter(c => c.id !== cardId);
     gs.currentTrick.cards.push({ card, playerIndex });
+
+    // Belote/Rebelote
     this.checkBeloteAnnouncement(gs, playerIndex, card);
 
+    // Pli complet
     if (gs.currentTrick.cards.length === 4) {
       const winnerIndex = determineTrickWinner(gs.currentTrick, gs.trumpSuit);
       gs.currentTrick.winnerIndex = winnerIndex;
       gs.tricks.push(gs.currentTrick);
       gs.lastTrickWinner = winnerIndex;
 
+      // Mettre à jour la mémoire IA
       const memory = this.aiMemories.get(gs.id);
       if (memory) updateMemory(memory, gs.currentTrick, gs.trumpSuit);
 
@@ -436,39 +489,48 @@ class GameManager {
       gs.currentPlayerIndex = (playerIndex + 1) % 4;
     }
 
-    this.runBotsSync(roomId);
+    this.processBotsIfNeeded(room);
     return gs;
   }
 
+  /** Vérifie belote/rebelote */
   private checkBeloteAnnouncement(gs: GameState, playerIndex: number, card: Card): void {
     if (!gs.trumpSuit || card.suit !== gs.trumpSuit) return;
     if (card.rank !== 'king' && card.rank !== 'queen') return;
 
     const player = gs.players[playerIndex];
     const otherRank = card.rank === 'king' ? 'queen' : 'king';
-    const hasOther =
-      player.hand.some(c => c.suit === gs.trumpSuit && c.rank === otherRank) ||
+    const hasOther = player.hand.some(c => c.suit === gs.trumpSuit && c.rank === otherRank) ||
       gs.tricks.some(t => t.cards.some(tc => tc.playerIndex === playerIndex && tc.card.suit === gs.trumpSuit && tc.card.rank === otherRank));
 
+    // On vérifie aussi la carte actuelle du pli en cours (sauf la carte qu'on vient de jouer)
     if (!hasOther) return;
+
     let entry = gs.beloteAnnounced.find(e => e.playerIndex === playerIndex);
     if (!entry) {
       entry = { playerIndex, announced: [] };
       gs.beloteAnnounced.push(entry);
     }
     const type = entry.announced.length === 0 ? 'belote' : 'rebelote';
-    if (!entry.announced.includes(type)) entry.announced.push(type);
+    if (!entry.announced.includes(type)) {
+      entry.announced.push(type);
+    }
   }
 
+  /** Calcul et application du score */
   private calculateAndApplyScore(gs: GameState, room: Room): void {
     if (!gs.trumpSuit) return;
+    gs.phase = 'scoring';
 
     const [team0Raw, team1Raw] = calculateRoundPoints(gs.tricks, gs.trumpSuit);
+
+    // Bonus annonces
     const announcements = this.gameAnnouncements.get(gs.id) || [];
     const team0Ann = announcements.filter(a => a.playerIndex % 2 === 0);
     const team1Ann = announcements.filter(a => a.playerIndex % 2 === 1);
     const { totalPoints: annPoints } = resolveAnnouncements(team0Ann, team1Ann);
 
+    // Bonus belote-rebelote
     let beloteTeam: number | null = null;
     for (const entry of gs.beloteAnnounced) {
       if (entry.announced.includes('belote') && entry.announced.includes('rebelote')) {
@@ -485,15 +547,10 @@ class GameManager {
       const takerIndex = gs.trumpSelection?.takerPlayerIndex ?? 0;
       const takerTeam = takerIndex % 2;
       const takerPoints = takerTeam === 0 ? team0Score : team1Score;
-      const threshold = 81;
+      const threshold = beloteTeam === takerTeam ? 92 : 82;
 
       if (takerPoints >= threshold) {
         contractMet = true;
-        // Bonus capot : l'adversaire a 0 point brut
-        if ((takerTeam === 0 && team1Raw === 0) || (takerTeam === 1 && team0Raw === 0)) {
-          if (takerTeam === 0) team0Score += 250;
-          else team1Score += 250;
-        }
       } else {
         contractMet = false;
         if (takerTeam === 0) { team0Score = 0; team1Score = 162; }
@@ -505,19 +562,16 @@ class GameManager {
       const declarerTeam = bs.highestBid.playerIndex % 2;
       const declarerPoints = declarerTeam === 0 ? team0Raw : team1Raw;
       const contractValue = bs.highestBid.value;
+
       let multiplier = 1;
       if (bs.isRecontred) multiplier = 4;
       else if (bs.isContred) multiplier = 2;
+
       if (declarerPoints >= contractValue) {
         contractMet = true;
         const score = contractValue * multiplier;
         if (declarerTeam === 0) { team0Score = score + annPoints[0]; team1Score = team1Raw; }
         else { team0Score = team0Raw; team1Score = score + annPoints[1]; }
-        // Bonus capot
-        if ((declarerTeam === 0 && team1Raw === 0) || (declarerTeam === 1 && team0Raw === 0)) {
-          if (declarerTeam === 0) team0Score += 250 * multiplier;
-          else team1Score += 250 * multiplier;
-        }
       } else {
         contractMet = false;
         const penalty = (contractValue + 10) * multiplier;
@@ -526,6 +580,7 @@ class GameManager {
       }
     }
 
+    // Belote toujours comptée
     if (beloteTeam === 0) team0Score += 20;
     else if (beloteTeam === 1) team1Score += 20;
 
@@ -541,28 +596,34 @@ class GameManager {
       beloteTeam,
     });
 
+    // Chat message
     const roomId = Array.from(this.rooms.entries()).find(([, r]) => r.gameState?.id === gs.id)?.[0];
     if (roomId) {
       this.addChatMessage(roomId, 'Système', `Manche terminée — Nous: ${team0Score} pts | Eux: ${team1Score} pts`, true);
     }
 
+    // Fin de partie ou nouvelle manche
     if (gs.totalScores[0] >= gs.targetScore || gs.totalScores[1] >= gs.targetScore) {
       gs.phase = 'finished';
     } else {
+      // Passer en phase scoring avec un timestamp — le client appellera next_round après 2s
       gs.phase = 'scoring';
+      (gs as any).scoringTimestamp = Date.now();
     }
   }
 
+  /** Appelé par le client après avoir vu les scores (remplace le setTimeout) */
   handleNextRound(roomId: string): GameState | null {
     const room = this.rooms.get(roomId);
     if (!room?.gameState) return null;
     const gs = room.gameState;
-    if (gs.phase !== 'scoring') return gs;
+    if (gs.phase !== 'scoring') return gs; // déjà passé
     this.startNewRound(gs);
-    this.runBotsSync(roomId);
+    this.processBotsIfNeeded(room);
     return gs;
   }
 
+  /** Nouvelle manche */
   startNewRound(gs: GameState): void {
     gs.dealerIndex = (gs.dealerIndex + 1) % 4;
     gs.tricks = [];
@@ -579,86 +640,46 @@ class GameManager {
     this.dealForMode(gs);
   }
 
-  /**
-   * FIX PRINCIPAL: Execute bots synchroniquement, sans setTimeout
-   * Sur Vercel serverless, setTimeout ne s'exécute JAMAIS après la réponse HTTP.
-   * Les bots doivent jouer immédiatement dans le même appel serveur.
-   * Limite à 12 actions bot max pour éviter les boucles infinies.
-   */
-  runBotsSync(roomId: string, maxIterations = 12): void {
-    const room = this.rooms.get(roomId);
-    if (!room?.gameState) return;
-
-    for (let i = 0; i < maxIterations; i++) {
-      const gs = room.gameState;
-      if (!gs) break;
-      
-      // Arrêter si la phase ne nécessite pas d'action bot
-      if (gs.phase === 'scoring' || gs.phase === 'finished' || gs.phase === 'dealing') break;
-
-      const playerIndex = gs.currentPlayerIndex;
-      const player = gs.players[playerIndex];
-      if (!player || !player.id.startsWith('bot_')) break;
-
-      this.botPlayOnce(room, playerIndex);
-    }
-  }
-
-  private botPlayOnce(room: Room, playerIndex: number): void {
+  /** Fait jouer les bots si c'est leur tour */
+  processBotsIfNeeded(room: Room): void {
     const gs = room.gameState;
     if (!gs) return;
-    const player = gs.players[playerIndex];
-    if (!player) return;
 
-    try {
-      if (gs.phase === 'trump_selection') {
-        const tsPhase = gs.trumpSelection?.phase;
-        if (!tsPhase || tsPhase === 'done') return;
-        const decision = aiChooseTrump(player.hand, gs.turnedCard, tsPhase);
-        this.handleTrumpSelection(room.id, playerIndex, decision.action, decision.suit);
-      } else if (gs.phase === 'bidding') {
-        const bs = gs.biddingState;
-        const decision = aiChooseBid(
-          player.hand,
-          bs?.highestBid ? { value: bs.highestBid.value, suit: bs.highestBid.suit } : null,
-          playerIndex
-        );
-        this.handleBid(room.id, playerIndex, decision.action, decision.value, decision.suit);
-      } else if (gs.phase === 'playing' && gs.currentTrick && gs.trumpSuit) {
-        const memory = this.aiMemories.get(gs.id) || createAIMemory();
-        const card = aiChooseCard(player.hand, gs.currentTrick, gs.trumpSuit, playerIndex, memory, gs);
-        this.handlePlayCard(room.id, playerIndex, card.id, player.id);
-      }
-    } catch (e) {
-      console.error(`Bot error for player ${playerIndex}:`, e);
-    }
+    const currentPlayer = gs.players[gs.currentPlayerIndex];
+    if (!currentPlayer || !currentPlayer.id.startsWith('bot_')) return;
+
+    // Délai simulant la réflexion de l'IA
+    setTimeout(() => this.botPlay(room), 400);
   }
 
-  /** Appelé par get_state pour s'assurer que les bots jouent même si un cold start est arrivé */
-  ensureBotsPlayed(roomId: string): void {
-    const room = this.rooms.get(roomId);
-    if (!room?.gameState) return;
+  /** Action du bot */
+  private botPlay(room: Room): void {
     const gs = room.gameState;
-    if (gs.phase === 'scoring' || gs.phase === 'finished') return;
-    const player = gs.players[gs.currentPlayerIndex];
-    if (player?.id.startsWith('bot_')) {
-      this.runBotsSync(roomId);
+    if (!gs) return;
+
+    const playerIndex = gs.currentPlayerIndex;
+    const player = gs.players[playerIndex];
+    if (!player || !player.id.startsWith('bot_')) return;
+
+    if (gs.phase === 'trump_selection') {
+      const tsPhase = gs.trumpSelection?.phase;
+      if (tsPhase === 'done') return;
+      const decision = aiChooseTrump(player.hand, gs.turnedCard, tsPhase || 'first_round');
+      this.handleTrumpSelection(room.id, playerIndex, decision.action, decision.suit);
+    } else if (gs.phase === 'bidding') {
+      const bs = gs.biddingState;
+      const decision = aiChooseBid(
+        player.hand,
+        bs?.highestBid ? { value: bs.highestBid.value, suit: bs.highestBid.suit } : null,
+        playerIndex
+      );
+      this.handleBid(room.id, playerIndex, decision.action, decision.value, decision.suit);
+    } else if (gs.phase === 'playing' && gs.currentTrick && gs.trumpSuit) {
+      const memory = this.aiMemories.get(gs.id) || createAIMemory();
+      const card = aiChooseCard(player.hand, gs.currentTrick, gs.trumpSuit, playerIndex, memory, gs);
+      this.handlePlayCard(room.id, playerIndex, card.id);
     }
   }
 }
 
-// ============================================================
-// SINGLETON GLOBAL — globalThis survit aux hot-reloads Next.js
-// Sur Vercel: chaque instance froide repart de zéro,
-// mais au sein d'une même instance chaude, l'état est partagé.
-// ============================================================
-declare global {
-  // eslint-disable-next-line no-var
-  var __beloteGameManager: GameManager | undefined;
-}
-
-if (!globalThis.__beloteGameManager) {
-  globalThis.__beloteGameManager = new GameManager();
-}
-
-export const gameManager = globalThis.__beloteGameManager!;
+export const gameManager = new GameManager();
