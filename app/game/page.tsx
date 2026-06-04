@@ -23,7 +23,8 @@ function GamePageContent() {
   const [myPosition, setMyPosition] = useState<number>(0);
   const prevTrickCountRef = useRef(0);
   const prevTurnRef = useRef<number | null>(null);
-  const scoringTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const scoringShownRef = useRef(false);
+  const scoringPhaseRef = useRef(false);
 
   useEffect(() => { loadFromSession(); }, [loadFromSession]);
   useEffect(() => { if (!playerName || !roomId) router.push('/lobby'); }, [playerName, roomId, router]);
@@ -37,13 +38,13 @@ function GamePageContent() {
         const gs = data.gameState;
         const idx = gs.players.findIndex((p: { id: string }) => p.id === playerId);
 
-        // Sound: trick won
+        // Son : pli gagné
         if (gs.tricks && gs.tricks.length > prevTrickCountRef.current) {
           playTrickWonSound();
           prevTrickCountRef.current = gs.tricks.length;
         }
 
-        // Sound: your turn
+        // Son : ton tour
         if (gs.currentPlayerIndex === idx && prevTurnRef.current !== idx) {
           playYourTurnSound();
         }
@@ -59,24 +60,32 @@ function GamePageContent() {
     } catch { /* ignore */ }
   }, [roomId, playerId]);
 
+  // Polling principal — 600ms pour une meilleure réactivité
   useEffect(() => {
     pollState();
-    const interval = setInterval(pollState, 800);
+    const interval = setInterval(pollState, 600);
     return () => clearInterval(interval);
   }, [pollState]);
 
-  // FIXED: Auto-advance scoring screen after 2.5s
+  // FIX: Auto-advance scoring — robuste même en cas de cold start serveur
   useEffect(() => {
-    if (gameState?.phase === 'scoring' && roomId) {
-      if (scoringTimeoutRef.current) clearTimeout(scoringTimeoutRef.current);
-      scoringTimeoutRef.current = setTimeout(async () => {
+    if (gameState?.phase === 'scoring') {
+      if (scoringPhaseRef.current) return; // déjà en cours
+      scoringPhaseRef.current = true;
+      scoringShownRef.current = false;
+
+      const timer = setTimeout(async () => {
+        if (!roomId) return;
         try {
           await gameApi('next_round', { roomId });
         } catch { /* ignore */ }
+        scoringPhaseRef.current = false;
       }, 2500);
       return () => {
-        if (scoringTimeoutRef.current) clearTimeout(scoringTimeoutRef.current);
+        clearTimeout(timer);
       };
+    } else {
+      scoringPhaseRef.current = false;
     }
   }, [gameState?.phase, roomId]);
 
@@ -90,7 +99,6 @@ function GamePageContent() {
 
   const handleLeave = async () => {
     if (!playerId) return;
-    if (scoringTimeoutRef.current) clearTimeout(scoringTimeoutRef.current);
     await gameApi('leave_room', { playerId });
     router.push('/lobby');
   };
@@ -100,7 +108,8 @@ function GamePageContent() {
     playCardSound();
     try {
       await gameApi('play_card', { roomId, playerIndex: myPosition, cardId, playerId });
-      setTimeout(pollState, 100);
+      // Polling rapide après une action
+      setTimeout(pollState, 150);
     } catch { /* ignore */ }
   };
 
@@ -108,7 +117,7 @@ function GamePageContent() {
     if (!roomId) return;
     try {
       await gameApi('trump_selection', { roomId, playerIndex: myPosition, selAction: action, suit });
-      setTimeout(pollState, 100);
+      setTimeout(pollState, 150);
     } catch { /* ignore */ }
   };
 
@@ -116,7 +125,7 @@ function GamePageContent() {
     if (!roomId) return;
     try {
       await gameApi('bid', { roomId, playerIndex: myPosition, bidAction: action, value, suit });
-      setTimeout(pollState, 100);
+      setTimeout(pollState, 150);
     } catch { /* ignore */ }
   };
 
@@ -125,7 +134,7 @@ function GamePageContent() {
     return <WaitingRoom room={room} playerId={playerId} onStart={handleStartGame} onLeave={handleLeave} />;
   }
 
-  // Scoring screen (between rounds)
+  // Scoring screen (entre les manches)
   if (gameState.phase === 'scoring') {
     const myTeam = myPosition % 2;
     const lastRound = gameState.roundScores[gameState.roundScores.length - 1];
@@ -156,13 +165,21 @@ function GamePageContent() {
               </div>
             </div>
           )}
+          {lastRound?.contractMet === false && (
+            <p className="text-red-400 text-sm font-mono mb-4">Contrat chuté !</p>
+          )}
+          {lastRound?.beloteTeam !== null && lastRound?.beloteTeam !== undefined && (
+            <p className="text-[#FFD700] text-sm font-mono mb-4">
+              Belote-Rebelote {lastRound.beloteTeam === myTeam ? '(Nous) +20pts' : '(Eux) +20pts'}
+            </p>
+          )}
           <p className="text-[#6b7f8a] text-sm font-mono animate-pulse">Prochaine manche dans 2 secondes...</p>
         </motion.div>
       </div>
     );
   }
 
-  // Victory
+  // Victoire
   if (gameState.phase === 'finished') {
     const myTeam = myPosition % 2;
     const winningTeam = gameState.totalScores[0] >= gameState.targetScore ? 0 : 1;
@@ -171,7 +188,7 @@ function GamePageContent() {
     return <VictoryScreen gameState={gameState} myPosition={myPosition} onLeave={handleLeave} />;
   }
 
-  // Game table with chat
+  // Table de jeu
   return (
     <>
       <GameTable
@@ -223,7 +240,7 @@ function WaitingRoom({ room, playerId, onStart, onLeave }: {
       <div className="absolute inset-0">
         <div className="absolute top-1/3 left-1/3 w-[500px] h-[500px] bg-[#00D4FF]/3 rounded-full blur-[150px]" />
       </div>
-      
+
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="premium-card rounded-2xl p-8 w-[520px] max-w-[90vw] relative z-10 shadow-[0_0_60px_rgba(0,212,255,0.15)]">
         <div className="text-center mb-6">
           <h2 className="text-2xl font-bold text-white">{room.name}</h2>
@@ -298,7 +315,7 @@ function VictoryScreen({ gameState, myPosition, onLeave }: { gameState: GameStat
         <p className="text-[#6b7f8a] mb-6">
           {iWon ? 'Bravo, ton équipe remporte la partie !' : 'Bien joué, tu feras mieux la prochaine fois !'}
         </p>
-        
+
         <div className="flex gap-8 justify-center mb-8 p-4 rounded-xl bg-[#0d1520]/50 border border-[rgba(0,212,255,0.1)]">
           <div>
             <p className="text-[10px] font-mono text-[#6b7f8a] uppercase mb-1">Nous</p>
@@ -309,6 +326,17 @@ function VictoryScreen({ gameState, myPosition, onLeave }: { gameState: GameStat
             <p className="text-[10px] font-mono text-[#6b7f8a] uppercase mb-1">Eux</p>
             <p className="text-2xl font-bold text-white/60 font-mono">{gameState.totalScores[1 - myTeam]}</p>
           </div>
+        </div>
+
+        <div className="mb-4">
+          <p className="text-[10px] font-mono text-[#6b7f8a] uppercase mb-2">Historique des manches</p>
+          {gameState.roundScores.map((rs, i) => (
+            <div key={i} className="flex justify-between text-xs font-mono text-[#6b7f8a] mb-1">
+              <span>Manche {i + 1}</span>
+              <span>Nous: <span className="text-white">{myTeam === 0 ? rs.team0Points : rs.team1Points}</span></span>
+              <span>Eux: <span className="text-white">{myTeam === 0 ? rs.team1Points : rs.team0Points}</span></span>
+            </div>
+          ))}
         </div>
 
         <button onClick={onLeave} className="btn-glow rounded-xl px-8 py-3 text-sm font-bold">

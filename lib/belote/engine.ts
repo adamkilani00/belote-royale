@@ -120,6 +120,7 @@ export function getPlayableCards(
   // Peut suivre la couleur demandée
   if (followCards.length > 0) {
     if (leadSuit === trumpSuit) {
+      // FIX: passer trumpSuit directement, pas la couleur des cartes
       const higherTrumps = getHigherTrumps(followCards, currentTrick, trumpSuit);
       return higherTrumps.length > 0 ? higherTrumps : followCards;
     }
@@ -131,6 +132,7 @@ export function getPlayableCards(
 
   // Doit couper (jouer atout) si possible
   if (trumpCards.length > 0) {
+    // FIX: passer trumpSuit directement
     const higherTrumps = getHigherTrumps(trumpCards, currentTrick, trumpSuit);
     return higherTrumps.length > 0 ? higherTrumps : trumpCards;
   }
@@ -156,7 +158,7 @@ function isPartnerWinning(trick: Trick, trumpSuit: Suit, playerIndex: number): b
   return (currentWinnerIndex % 2) === (playerIndex % 2);
 }
 
-/** Retourne les atouts plus forts que ceux déjà joués */
+/** Retourne les atouts plus forts que ceux déjà joués — FIX: utilise trumpSuit correct */
 function getHigherTrumps(trumpCards: Card[], trick: Trick, trumpSuit: Suit): Card[] {
   const leadSuit = trick.cards[0].card.suit;
   let maxTrumpStrength = 0;
@@ -166,8 +168,9 @@ function getHigherTrumps(trumpCards: Card[], trick: Trick, trumpSuit: Suit): Car
       if (strength > maxTrumpStrength) maxTrumpStrength = strength;
     }
   }
+  // FIX: utiliser trumpSuit (pas trumpCards[0]?.suit qui peut être undefined ou wrong)
   return trumpCards.filter(c =>
-    getCardStrength(c, trumpSuit, trumpCards[0]?.suit || leadSuit) > maxTrumpStrength
+    getCardStrength(c, trumpSuit, trumpSuit) > maxTrumpStrength
   );
 }
 

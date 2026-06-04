@@ -1,14 +1,8 @@
 // API Route principale du jeu de Belote Royale
-// Optimisée pour Vercel Serverless + gestion des bots côté client
 import { NextRequest, NextResponse } from 'next/server';
 import { gameManager } from '@/lib/belote/game-manager';
 import { getPlayableCards } from '@/lib/belote/engine';
 import type { GameMode, Suit } from '@/lib/belote/types';
-
-// VERCEL SERVERLESS FIX:
-// - Pas de setTimeout côté serveur (s'exécute pas après réponse HTTP)
-// - Les bots se décident lors du get_state pour polling immédiat
-// - Client gère le délai d'affichage via setInterval
 
 export async function POST(req: NextRequest) {
   try {
@@ -92,7 +86,10 @@ export async function POST(req: NextRequest) {
         const room = gameManager.rooms.get(roomId);
         if (!room) return NextResponse.json({ gameState: null, room: null });
         if (!room.gameState) return NextResponse.json({ gameState: null, room });
-        
+
+        // FIX: Assurer que les bots jouent à chaque get_state (sécurité cold start)
+        gameManager.ensureBotsPlayed(roomId);
+
         const gs = room.gameState;
         const playerIdx = gs.players.findIndex(p => p.id === playerId);
         const hand = playerIdx >= 0 ? gs.players[playerIdx].hand : [];
@@ -102,12 +99,6 @@ export async function POST(req: NextRequest) {
         }
 
         const announcements = gameManager.gameAnnouncements.get(gs.id) || [];
-        
-        // VERCEL FIX: Exécuter les bots immédiatement lors du polling
-        // au lieu d'attendre un setTimeout côté serveur
-        const currentPlayer = gs.players[gs.currentPlayerIndex];
-        const shouldPlayBot = currentPlayer && currentPlayer.id.startsWith('bot_') && 
-                             (gs.phase === 'playing' || gs.phase === 'trump_selection' || gs.phase === 'bidding');
 
         return NextResponse.json({
           gameState: sanitizeGameState(gs, playerId),
@@ -115,8 +106,6 @@ export async function POST(req: NextRequest) {
           playableCards: playable,
           room,
           announcements,
-          shouldPlayBot,
-          botPlayerIndex: shouldPlayBot ? gs.currentPlayerIndex : null,
         });
       }
 
@@ -136,7 +125,6 @@ export async function POST(req: NextRequest) {
 
       case 'play_card': {
         const { roomId, playerIndex, cardId, playerId } = body;
-        // SECURITY FIX: Pass playerId to verify identity
         const gs = gameManager.handlePlayCard(roomId, playerIndex, cardId, playerId);
         if (!gs) return NextResponse.json({ error: 'Coup invalide' }, { status: 400 });
         return NextResponse.json({ success: true });
@@ -159,8 +147,11 @@ export async function POST(req: NextRequest) {
 
       case 'next_round': {
         const { roomId } = body;
+        const room = gameManager.rooms.get(roomId);
+        // FIX: Si la room n'existe plus (cold start), retourner null proprement
+        if (!room?.gameState) return NextResponse.json({ gameState: null });
         const gameState = gameManager.handleNextRound(roomId);
-        return NextResponse.json({ gameState });
+        return NextResponse.json({ gameState: gameState ? sanitizeGameState(gameState, '') : null });
       }
 
       default:

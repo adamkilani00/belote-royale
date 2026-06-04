@@ -1,10 +1,12 @@
-// Gestionnaire d'état du jeu côté serveur — Version Robuste avec Capot + Vercel compatible
+// Gestionnaire d'état du jeu — Version finale corrigée
+// Compatible Vercel Serverless via globalThis singleton
+// Bots exécutés SYNCHRONIQUEMENT (pas de setTimeout serveur)
 import {
-  Room, GameState, GameMode, Player, Suit, Trick, Card,
+  Room, GameState, GameMode, Player, Suit, Card,
   BiddingState, TrumpSelection, GamePhase
 } from './types';
 import {
-  createDeck, shuffleDeck, dealCards, determineTrickWinner,
+  createDeck, shuffleDeck, determineTrickWinner,
   calculateRoundPoints, getPlayableCards, hasBeloteRebelote, getCardValue
 } from './engine';
 import { aiChooseCard, aiChooseBid, aiChooseTrump, createAIMemory, updateMemory } from './ai';
@@ -27,8 +29,6 @@ class GameManager {
   roomChats: Map<string, ChatMessage[]> = new Map();
   aiMemories: Map<string, ReturnType<typeof createAIMemory>> = new Map();
   gameAnnouncements: Map<string, Announcement[]> = new Map();
-  botTimers: Map<string, NodeJS.Timeout> = new Map();
-  roomCreatedAt: Map<string, number> = new Map();
 
   generateCode(): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -54,7 +54,6 @@ class GameManager {
     this.rooms.set(room.id, room);
     this.playerToRoom.set(playerId, room.id);
     this.roomChats.set(room.id, []);
-    this.roomCreatedAt.set(room.id, Date.now());
     if (fillBots) this.fillWithBots(room);
     return room;
   }
@@ -86,7 +85,7 @@ class GameManager {
     if (!roomId) return null;
     const room = this.rooms.get(roomId);
     if (!room) return null;
-    
+
     const playerInRoom = room.players.find(p => p.id === oldPlayerId);
     if (playerInRoom) {
       playerInRoom.id = newPlayerId;
@@ -94,7 +93,7 @@ class GameManager {
       this.playerToRoom.set(newPlayerId, roomId);
       this.pseudoToPlayer.set(pseudo.toLowerCase(), newPlayerId);
     }
-    
+
     if (room.gameState) {
       const gamePlayer = room.gameState.players.find(p => p.id === oldPlayerId);
       if (gamePlayer) {
@@ -113,20 +112,14 @@ class GameManager {
     if (!roomId) return { room: null, destroyed: false };
     const room = this.rooms.get(roomId);
     if (!room) return { room: null, destroyed: false };
-    
+
     if (room.creatorId === playerId && !room.gameState) {
       room.players.forEach(p => this.playerToRoom.delete(p.id));
       this.rooms.delete(roomId);
       this.roomChats.delete(roomId);
-      this.roomCreatedAt.delete(roomId);
-      const timersToDelete = Array.from(this.botTimers.keys()).filter(k => k.startsWith(roomId));
-      timersToDelete.forEach(k => {
-        clearTimeout(this.botTimers.get(k));
-        this.botTimers.delete(k);
-      });
       return { room, destroyed: true };
     }
-    
+
     if (room.gameState) {
       const player = room.gameState.players.find(p => p.id === playerId);
       if (player) player.connected = false;
@@ -201,11 +194,13 @@ class GameManager {
     this.dealForMode(gameState);
     room.gameState = gameState;
     this.addChatMessage(roomId, 'Système', 'La partie commence ! Bonne chance.', true);
-    this.scheduleBotsIfNeeded(roomId);
+    // FIX: Exécuter les bots synchroniquement après le démarrage
+    this.runBotsSync(roomId);
     return gameState;
   }
 
   private dealForMode(gameState: GameState): void {
+    // FIX: Utiliser UN seul deck pour toute la distribution
     const deck = shuffleDeck(createDeck());
     const { dealerIndex } = gameState;
     const order = [0, 1, 2, 3].map(i => (dealerIndex + 1 + i) % 4);
@@ -227,6 +222,8 @@ class GameManager {
         takerPlayerIndex: null,
         passes: 0,
       };
+      // Stocker les cartes restantes pour la distribution complète
+      (gameState as any).__remainingDeck = deck.slice(21);
       gameState.currentPlayerIndex = (dealerIndex + 1) % 4;
     } else {
       let cardIndex = 0;
@@ -266,13 +263,13 @@ class GameManager {
         ts.currentPlayerIndex = (gs.dealerIndex + 1) % 4;
       } else if (ts.phase === 'second_round' && ts.passes === 4) {
         this.startNewRound(gs);
-        this.scheduleBotsIfNeeded(roomId);
+        this.runBotsSync(roomId);
         return gs;
       } else {
         ts.currentPlayerIndex = (ts.currentPlayerIndex + 1) % 4;
       }
       gs.currentPlayerIndex = ts.currentPlayerIndex;
-      this.scheduleBotsIfNeeded(roomId);
+      this.runBotsSync(roomId);
       return gs;
     }
 
@@ -294,31 +291,41 @@ class GameManager {
     gs.currentPlayerIndex = (gs.dealerIndex + 1) % 4;
     gs.currentTrick = { cards: [], leaderIndex: gs.currentPlayerIndex, winnerIndex: null };
 
-    this.scheduleBotsIfNeeded(roomId);
+    this.runBotsSync(roomId);
     return gs;
   }
 
   private completeDealSimple(gs: GameState, takerIndex: number): void {
-    const fullDeck = shuffleDeck(createDeck());
-    const usedIds = new Set<string>();
-    gs.players.forEach(p => p.hand.forEach(c => usedIds.add(c.id)));
-    if (gs.turnedCard) usedIds.add(gs.turnedCard.id);
+    // FIX CRITIQUE: Utiliser le deck restant stocké, pas un nouveau deck
+    // Si le deck restant est disponible, l'utiliser
+    const remainingDeck: Card[] = (gs as any).__remainingDeck || [];
+    
+    // Si pas de deck stocké (cas de reconnexion), reconstruire depuis les cartes connues
+    if (remainingDeck.length === 0) {
+      const fullDeck = createDeck();
+      const usedIds = new Set<string>();
+      gs.players.forEach(p => p.hand.forEach(c => usedIds.add(c.id)));
+      if (gs.turnedCard) usedIds.add(gs.turnedCard.id);
+      const remaining = shuffleDeck(fullDeck.filter(c => !usedIds.has(c.id)));
+      remainingDeck.push(...remaining);
+    }
 
-    const remaining = fullDeck.filter(c => !usedIds.has(c.id));
     const order = [0, 1, 2, 3].map(i => (gs.dealerIndex + 1 + i) % 4);
-
     let cardIdx = 0;
+
     for (const pi of order) {
       if (pi === takerIndex) {
         gs.players[pi].hand.push(gs.turnedCard!);
-        gs.players[pi].hand.push(remaining[cardIdx++]);
-        gs.players[pi].hand.push(remaining[cardIdx++]);
+        gs.players[pi].hand.push(remainingDeck[cardIdx++]);
+        gs.players[pi].hand.push(remainingDeck[cardIdx++]);
       } else {
-        gs.players[pi].hand.push(remaining[cardIdx++]);
-        gs.players[pi].hand.push(remaining[cardIdx++]);
-        gs.players[pi].hand.push(remaining[cardIdx++]);
+        gs.players[pi].hand.push(remainingDeck[cardIdx++]);
+        gs.players[pi].hand.push(remainingDeck[cardIdx++]);
+        gs.players[pi].hand.push(remainingDeck[cardIdx++]);
       }
     }
+    // Nettoyer le deck temporaire
+    delete (gs as any).__remainingDeck;
   }
 
   private detectAllAnnouncements(gs: GameState): void {
@@ -353,7 +360,7 @@ class GameManager {
       bs.passes++;
       if (!bs.highestBid && bs.passes === 4) {
         this.startNewRound(gs);
-        this.scheduleBotsIfNeeded(roomId);
+        this.runBotsSync(roomId);
         return gs;
       }
       if (bs.highestBid && bs.passes === 3) {
@@ -363,7 +370,7 @@ class GameManager {
         gs.currentPlayerIndex = (gs.dealerIndex + 1) % 4;
         gs.currentTrick = { cards: [], leaderIndex: gs.currentPlayerIndex, winnerIndex: null };
         this.detectAllAnnouncements(gs);
-        this.scheduleBotsIfNeeded(roomId);
+        this.runBotsSync(roomId);
         return gs;
       }
       bs.currentPlayerIndex = (playerIndex + 1) % 4;
@@ -384,7 +391,7 @@ class GameManager {
     }
 
     gs.currentPlayerIndex = bs.currentPlayerIndex;
-    this.scheduleBotsIfNeeded(roomId);
+    this.runBotsSync(roomId);
     return gs;
   }
 
@@ -392,7 +399,8 @@ class GameManager {
     const room = this.rooms.get(roomId);
     if (!room?.gameState) return null;
     const gs = room.gameState;
-    
+
+    // FIX: Vérification d'identité sécurisée
     if (gs.players[playerIndex]?.id !== playerId) return null;
     if (gs.phase !== 'playing' || gs.currentPlayerIndex !== playerIndex) return null;
     if (!gs.currentTrick || !gs.trumpSuit) return null;
@@ -428,7 +436,7 @@ class GameManager {
       gs.currentPlayerIndex = (playerIndex + 1) % 4;
     }
 
-    this.scheduleBotsIfNeeded(roomId);
+    this.runBotsSync(roomId);
     return gs;
   }
 
@@ -477,11 +485,11 @@ class GameManager {
       const takerIndex = gs.trumpSelection?.takerPlayerIndex ?? 0;
       const takerTeam = takerIndex % 2;
       const takerPoints = takerTeam === 0 ? team0Score : team1Score;
-      const threshold = beloteTeam === takerTeam ? 92 : 81;
-      
+      const threshold = 81;
+
       if (takerPoints >= threshold) {
         contractMet = true;
-        // BONUS CAPOT: Si l'équipe adverse a 0 point
+        // Bonus capot : l'adversaire a 0 point brut
         if ((takerTeam === 0 && team1Raw === 0) || (takerTeam === 1 && team0Raw === 0)) {
           if (takerTeam === 0) team0Score += 250;
           else team1Score += 250;
@@ -505,7 +513,7 @@ class GameManager {
         const score = contractValue * multiplier;
         if (declarerTeam === 0) { team0Score = score + annPoints[0]; team1Score = team1Raw; }
         else { team0Score = team0Raw; team1Score = score + annPoints[1]; }
-        // BONUS CAPOT en contrée
+        // Bonus capot
         if ((declarerTeam === 0 && team1Raw === 0) || (declarerTeam === 1 && team0Raw === 0)) {
           if (declarerTeam === 0) team0Score += 250 * multiplier;
           else team1Score += 250 * multiplier;
@@ -551,7 +559,7 @@ class GameManager {
     const gs = room.gameState;
     if (gs.phase !== 'scoring') return gs;
     this.startNewRound(gs);
-    this.scheduleBotsIfNeeded(roomId);
+    this.runBotsSync(roomId);
     return gs;
   }
 
@@ -571,62 +579,86 @@ class GameManager {
     this.dealForMode(gs);
   }
 
-  scheduleBotsIfNeeded(roomId: string): void {
+  /**
+   * FIX PRINCIPAL: Execute bots synchroniquement, sans setTimeout
+   * Sur Vercel serverless, setTimeout ne s'exécute JAMAIS après la réponse HTTP.
+   * Les bots doivent jouer immédiatement dans le même appel serveur.
+   * Limite à 12 actions bot max pour éviter les boucles infinies.
+   */
+  runBotsSync(roomId: string, maxIterations = 12): void {
     const room = this.rooms.get(roomId);
-    const gs = room?.gameState;
-    if (!gs) return;
+    if (!room?.gameState) return;
 
-    const currentPlayer = gs.players[gs.currentPlayerIndex];
-    if (!currentPlayer || !currentPlayer.id.startsWith('bot_')) return;
+    for (let i = 0; i < maxIterations; i++) {
+      const gs = room.gameState;
+      if (!gs) break;
+      
+      // Arrêter si la phase ne nécessite pas d'action bot
+      if (gs.phase === 'scoring' || gs.phase === 'finished' || gs.phase === 'dealing') break;
 
-    const timerKey = `${roomId}_bot`;
-    const existingTimer = this.botTimers.get(timerKey);
-    if (existingTimer) clearTimeout(existingTimer);
+      const playerIndex = gs.currentPlayerIndex;
+      const player = gs.players[playerIndex];
+      if (!player || !player.id.startsWith('bot_')) break;
 
-    const timer = setTimeout(() => {
-      this.botPlay(roomId);
-      this.botTimers.delete(timerKey);
-    }, 300);
-    this.botTimers.set(timerKey, timer);
+      this.botPlayOnce(room, playerIndex);
+    }
   }
 
-  private botPlay(roomId: string): void {
-    const room = this.rooms.get(roomId);
-    const gs = room?.gameState;
+  private botPlayOnce(room: Room, playerIndex: number): void {
+    const gs = room.gameState;
     if (!gs) return;
-
-    const playerIndex = gs.currentPlayerIndex;
     const player = gs.players[playerIndex];
-    if (!player || !player.id.startsWith('bot_')) return;
+    if (!player) return;
 
-    if (gs.phase === 'trump_selection') {
-      const tsPhase = gs.trumpSelection?.phase;
-      if (tsPhase === 'done') return;
-      const decision = aiChooseTrump(player.hand, gs.turnedCard, tsPhase || 'first_round');
-      this.handleTrumpSelection(roomId, playerIndex, decision.action, decision.suit);
-    } else if (gs.phase === 'bidding') {
-      const bs = gs.biddingState;
-      const decision = aiChooseBid(
-        player.hand,
-        bs?.highestBid ? { value: bs.highestBid.value, suit: bs.highestBid.suit } : null,
-        playerIndex
-      );
-      this.handleBid(roomId, playerIndex, decision.action, decision.value, decision.suit);
-    } else if (gs.phase === 'playing' && gs.currentTrick && gs.trumpSuit) {
-      const memory = this.aiMemories.get(gs.id) || createAIMemory();
-      const card = aiChooseCard(player.hand, gs.currentTrick, gs.trumpSuit, playerIndex, memory, gs);
-      this.handlePlayCard(roomId, playerIndex, card.id, player.id);
+    try {
+      if (gs.phase === 'trump_selection') {
+        const tsPhase = gs.trumpSelection?.phase;
+        if (!tsPhase || tsPhase === 'done') return;
+        const decision = aiChooseTrump(player.hand, gs.turnedCard, tsPhase);
+        this.handleTrumpSelection(room.id, playerIndex, decision.action, decision.suit);
+      } else if (gs.phase === 'bidding') {
+        const bs = gs.biddingState;
+        const decision = aiChooseBid(
+          player.hand,
+          bs?.highestBid ? { value: bs.highestBid.value, suit: bs.highestBid.suit } : null,
+          playerIndex
+        );
+        this.handleBid(room.id, playerIndex, decision.action, decision.value, decision.suit);
+      } else if (gs.phase === 'playing' && gs.currentTrick && gs.trumpSuit) {
+        const memory = this.aiMemories.get(gs.id) || createAIMemory();
+        const card = aiChooseCard(player.hand, gs.currentTrick, gs.trumpSuit, playerIndex, memory, gs);
+        this.handlePlayCard(room.id, playerIndex, card.id, player.id);
+      }
+    } catch (e) {
+      console.error(`Bot error for player ${playerIndex}:`, e);
+    }
+  }
+
+  /** Appelé par get_state pour s'assurer que les bots jouent même si un cold start est arrivé */
+  ensureBotsPlayed(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room?.gameState) return;
+    const gs = room.gameState;
+    if (gs.phase === 'scoring' || gs.phase === 'finished') return;
+    const player = gs.players[gs.currentPlayerIndex];
+    if (player?.id.startsWith('bot_')) {
+      this.runBotsSync(roomId);
     }
   }
 }
 
+// ============================================================
+// SINGLETON GLOBAL — globalThis survit aux hot-reloads Next.js
+// Sur Vercel: chaque instance froide repart de zéro,
+// mais au sein d'une même instance chaude, l'état est partagé.
+// ============================================================
 declare global {
   // eslint-disable-next-line no-var
-  var __gameManager: GameManager | undefined;
+  var __beloteGameManager: GameManager | undefined;
 }
 
-if (!globalThis.__gameManager) {
-  globalThis.__gameManager = new GameManager();
+if (!globalThis.__beloteGameManager) {
+  globalThis.__beloteGameManager = new GameManager();
 }
 
-export const gameManager = globalThis.__gameManager;
+export const gameManager = globalThis.__beloteGameManager!;
