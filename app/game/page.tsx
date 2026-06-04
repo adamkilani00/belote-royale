@@ -55,6 +55,13 @@ function GamePageContent() {
       } else {
         setGameState(null);
       }
+      // Si phase 'scoring', déclencher next_round après 2.5s
+      if (data.gameState?.phase === 'scoring' && roomId) {
+        setTimeout(async () => {
+          try { await gameApi('next_round', { roomId }); } catch { /* ignore */ }
+          pollState();
+        }, 2500);
+      }
     } catch { /* ignore */ }
   }, [roomId, playerId]);
 
@@ -106,6 +113,43 @@ function GamePageContent() {
   // Waiting room
   if (!gameState) {
     return <WaitingRoom room={room} playerId={playerId} onStart={handleStartGame} onLeave={handleLeave} />;
+  }
+
+  // Scoring screen (between rounds)
+  if (gameState.phase === 'scoring') {
+    const myTeam = myPosition % 2;
+    const lastRound = gameState.roundScores[gameState.roundScores.length - 1];
+    return (
+      <div className="min-h-[100dvh] bg-[#050508] flex items-center justify-center relative overflow-hidden">
+        <div className="absolute inset-0">
+          <div className="absolute top-1/3 left-1/3 w-[400px] h-[400px] bg-[#00D4FF]/5 rounded-full blur-[120px]" />
+        </div>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="premium-card rounded-2xl p-8 w-[440px] max-w-[90vw] relative z-10 text-center"
+        >
+          <p className="text-[10px] font-mono text-[#00D4FF]/60 uppercase tracking-wider mb-2">Manche {gameState.roundNumber - 1} terminée</p>
+          <h2 className="text-2xl font-bold text-white mb-6">Résultats</h2>
+          {lastRound && (
+            <div className="flex gap-8 justify-center mb-6 p-4 rounded-xl bg-[#0d1520]/50 border border-[rgba(0,212,255,0.1)]">
+              <div>
+                <p className="text-[10px] font-mono text-[#6b7f8a] uppercase mb-1">Nous</p>
+                <p className="text-3xl font-bold text-[#00D4FF] font-mono">{myTeam === 0 ? lastRound.team0Points : lastRound.team1Points}</p>
+                <p className="text-xs text-[#6b7f8a] font-mono">Total: {myTeam === 0 ? lastRound.team0Total : lastRound.team1Total}</p>
+              </div>
+              <div className="w-px bg-[rgba(0,212,255,0.1)]" />
+              <div>
+                <p className="text-[10px] font-mono text-[#6b7f8a] uppercase mb-1">Eux</p>
+                <p className="text-3xl font-bold text-white/60 font-mono">{myTeam === 0 ? lastRound.team1Points : lastRound.team0Points}</p>
+                <p className="text-xs text-[#6b7f8a] font-mono">Total: {myTeam === 0 ? lastRound.team1Total : lastRound.team0Total}</p>
+              </div>
+            </div>
+          )}
+          <p className="text-[#6b7f8a] text-sm font-mono animate-pulse">Prochaine manche dans 2 secondes...</p>
+        </motion.div>
+      </div>
+    );
   }
 
   // Victory

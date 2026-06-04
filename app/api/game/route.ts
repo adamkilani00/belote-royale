@@ -144,6 +144,12 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ messages });
       }
 
+      case 'next_round': {
+        const { roomId } = body;
+        const gameState = gameManager.handleNextRound(roomId);
+        return NextResponse.json({ gameState });
+      }
+
       default:
         return NextResponse.json({ error: 'Action inconnue' }, { status: 400 });
     }

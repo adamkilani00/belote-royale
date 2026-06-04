@@ -606,12 +606,21 @@ class GameManager {
     if (gs.totalScores[0] >= gs.targetScore || gs.totalScores[1] >= gs.targetScore) {
       gs.phase = 'finished';
     } else {
-      // Lancer nouvelle manche après un délai (géré côté client)
-      setTimeout(() => {
-        this.startNewRound(gs);
-        this.processBotsIfNeeded(room);
-      }, 2000);
+      // Passer en phase scoring avec un timestamp — le client appellera next_round après 2s
+      gs.phase = 'scoring';
+      (gs as any).scoringTimestamp = Date.now();
     }
+  }
+
+  /** Appelé par le client après avoir vu les scores (remplace le setTimeout) */
+  handleNextRound(roomId: string): GameState | null {
+    const room = this.rooms.get(roomId);
+    if (!room?.gameState) return null;
+    const gs = room.gameState;
+    if (gs.phase !== 'scoring') return gs; // déjà passé
+    this.startNewRound(gs);
+    this.processBotsIfNeeded(room);
+    return gs;
   }
 
   /** Nouvelle manche */
@@ -639,8 +648,8 @@ class GameManager {
     const currentPlayer = gs.players[gs.currentPlayerIndex];
     if (!currentPlayer || !currentPlayer.id.startsWith('bot_')) return;
 
-    // Petit délai pour simuler la réflexion
-    setTimeout(() => this.botPlay(room), 600);
+    // Délai simulant la réflexion de l'IA
+    setTimeout(() => this.botPlay(room), 400);
   }
 
   /** Action du bot */
