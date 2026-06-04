@@ -1,4 +1,4 @@
-// Gestionnaire d'état du jeu côté serveur — Version Robuste avec Capot
+// Gestionnaire d'état du jeu côté serveur — Version Robuste avec Capot + Vercel compatible
 import {
   Room, GameState, GameMode, Player, Suit, Trick, Card,
   BiddingState, TrumpSelection, GamePhase
@@ -28,6 +28,7 @@ class GameManager {
   aiMemories: Map<string, ReturnType<typeof createAIMemory>> = new Map();
   gameAnnouncements: Map<string, Announcement[]> = new Map();
   botTimers: Map<string, NodeJS.Timeout> = new Map();
+  roomCreatedAt: Map<string, number> = new Map();
 
   generateCode(): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -53,6 +54,7 @@ class GameManager {
     this.rooms.set(room.id, room);
     this.playerToRoom.set(playerId, room.id);
     this.roomChats.set(room.id, []);
+    this.roomCreatedAt.set(room.id, Date.now());
     if (fillBots) this.fillWithBots(room);
     return room;
   }
@@ -84,6 +86,7 @@ class GameManager {
     if (!roomId) return null;
     const room = this.rooms.get(roomId);
     if (!room) return null;
+    
     const playerInRoom = room.players.find(p => p.id === oldPlayerId);
     if (playerInRoom) {
       playerInRoom.id = newPlayerId;
@@ -91,6 +94,7 @@ class GameManager {
       this.playerToRoom.set(newPlayerId, roomId);
       this.pseudoToPlayer.set(pseudo.toLowerCase(), newPlayerId);
     }
+    
     if (room.gameState) {
       const gamePlayer = room.gameState.players.find(p => p.id === oldPlayerId);
       if (gamePlayer) {
@@ -109,10 +113,12 @@ class GameManager {
     if (!roomId) return { room: null, destroyed: false };
     const room = this.rooms.get(roomId);
     if (!room) return { room: null, destroyed: false };
+    
     if (room.creatorId === playerId && !room.gameState) {
       room.players.forEach(p => this.playerToRoom.delete(p.id));
       this.rooms.delete(roomId);
       this.roomChats.delete(roomId);
+      this.roomCreatedAt.delete(roomId);
       const timersToDelete = Array.from(this.botTimers.keys()).filter(k => k.startsWith(roomId));
       timersToDelete.forEach(k => {
         clearTimeout(this.botTimers.get(k));
@@ -120,6 +126,7 @@ class GameManager {
       });
       return { room, destroyed: true };
     }
+    
     if (room.gameState) {
       const player = room.gameState.players.find(p => p.id === playerId);
       if (player) player.connected = false;
@@ -474,7 +481,7 @@ class GameManager {
       
       if (takerPoints >= threshold) {
         contractMet = true;
-        // BONUS CAPOT: Si l'équipe adverse n'a 0 point
+        // BONUS CAPOT: Si l'équipe adverse a 0 point
         if ((takerTeam === 0 && team1Raw === 0) || (takerTeam === 1 && team0Raw === 0)) {
           if (takerTeam === 0) team0Score += 250;
           else team1Score += 250;
