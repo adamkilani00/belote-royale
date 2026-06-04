@@ -1,4 +1,4 @@
-// Gestionnaire d'état du jeu côté serveur — Version Robuste
+// Gestionnaire d'état du jeu côté serveur — Version Robuste avec Capot
 import {
   Room, GameState, GameMode, Player, Suit, Trick, Card,
   BiddingState, TrumpSelection, GamePhase
@@ -113,7 +113,6 @@ class GameManager {
       room.players.forEach(p => this.playerToRoom.delete(p.id));
       this.rooms.delete(roomId);
       this.roomChats.delete(roomId);
-      // Clear any bot timers for this room
       const timersToDelete = Array.from(this.botTimers.keys()).filter(k => k.startsWith(roomId));
       timersToDelete.forEach(k => {
         clearTimeout(this.botTimers.get(k));
@@ -387,9 +386,7 @@ class GameManager {
     if (!room?.gameState) return null;
     const gs = room.gameState;
     
-    // SECURITY FIX: Verify player identity
     if (gs.players[playerIndex]?.id !== playerId) return null;
-    
     if (gs.phase !== 'playing' || gs.currentPlayerIndex !== playerIndex) return null;
     if (!gs.currentTrick || !gs.trumpSuit) return null;
 
@@ -473,10 +470,15 @@ class GameManager {
       const takerIndex = gs.trumpSelection?.takerPlayerIndex ?? 0;
       const takerTeam = takerIndex % 2;
       const takerPoints = takerTeam === 0 ? team0Score : team1Score;
-      // FIXED: Correct threshold is 81 (not 82)
       const threshold = beloteTeam === takerTeam ? 92 : 81;
+      
       if (takerPoints >= threshold) {
         contractMet = true;
+        // BONUS CAPOT: Si l'équipe adverse n'a 0 point
+        if ((takerTeam === 0 && team1Raw === 0) || (takerTeam === 1 && team0Raw === 0)) {
+          if (takerTeam === 0) team0Score += 250;
+          else team1Score += 250;
+        }
       } else {
         contractMet = false;
         if (takerTeam === 0) { team0Score = 0; team1Score = 162; }
@@ -496,6 +498,11 @@ class GameManager {
         const score = contractValue * multiplier;
         if (declarerTeam === 0) { team0Score = score + annPoints[0]; team1Score = team1Raw; }
         else { team0Score = team0Raw; team1Score = score + annPoints[1]; }
+        // BONUS CAPOT en contrée
+        if ((declarerTeam === 0 && team1Raw === 0) || (declarerTeam === 1 && team0Raw === 0)) {
+          if (declarerTeam === 0) team0Score += 250 * multiplier;
+          else team1Score += 250 * multiplier;
+        }
       } else {
         contractMet = false;
         const penalty = (contractValue + 10) * multiplier;
@@ -565,7 +572,6 @@ class GameManager {
     const currentPlayer = gs.players[gs.currentPlayerIndex];
     if (!currentPlayer || !currentPlayer.id.startsWith('bot_')) return;
 
-    // FIXED: Instead of setTimeout (which doesn't work on Vercel), schedule for next polling
     const timerKey = `${roomId}_bot`;
     const existingTimer = this.botTimers.get(timerKey);
     if (existingTimer) clearTimeout(existingTimer);
