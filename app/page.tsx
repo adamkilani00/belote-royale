@@ -27,55 +27,50 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden">
+    <div className="min-h-[100dvh] flex flex-col items-center justify-center relative overflow-hidden px-4">
       {/* Background */}
       <div className="absolute inset-0 bg-[#050508]" />
-      <div className="absolute inset-0 opacity-30">
-        <div className="absolute top-1/4 left-1/4 w-[600px] h-[600px] bg-[#00D4FF]/5 rounded-full blur-[120px]" />
-        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-[#00FFB2]/5 rounded-full blur-[100px]" />
+      <div className="absolute inset-0 opacity-30 pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] bg-[#00D4FF]/5 rounded-full blur-[100px]" />
+        <div className="absolute bottom-1/4 right-1/4 w-[300px] h-[300px] bg-[#00FFB2]/5 rounded-full blur-[80px]" />
       </div>
 
-      {/* Floating decorations */}
+      {/* Floating decorations — hidden on very small screens */}
       <motion.div
-        animate={{ y: [-10, 10, -10], rotate: [45, 45, 45] }}
+        animate={{ y: [-10, 10, -10] }}
         transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-        className="absolute top-20 left-16 w-4 h-4 border border-[#00D4FF]/30 rotate-45"
-      />
-      <motion.div
-        animate={{ y: [10, -10, 10], rotate: [45, 45, 45] }}
-        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-        className="absolute bottom-32 left-24 w-3 h-3 bg-[#00D4FF]/20 rotate-45"
+        className="absolute top-16 left-8 w-4 h-4 border border-[#00D4FF]/30 rotate-45 hidden sm:block"
       />
       <motion.div
         animate={{ y: [-8, 8, -8] }}
         transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-        className="absolute top-24 right-20 text-[#00D4FF]/20 text-2xl"
+        className="absolute top-20 right-10 text-[#00D4FF]/20 text-2xl hidden sm:block"
       >♥</motion.div>
 
       {/* Content */}
       <motion.div
         initial={{ opacity: 0, y: 40 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="relative z-10 text-center max-w-2xl px-4"
+        transition={{ duration: 0.8 }}
+        className="relative z-10 text-center w-full max-w-md"
       >
         {/* Badge */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#00D4FF]/20 bg-[#00D4FF]/5 mb-8"
+          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#00D4FF]/20 bg-[#00D4FF]/5 mb-6"
         >
           <span className="text-[#00D4FF] text-xs">✦</span>
-          <span className="text-xs font-mono tracking-[0.15em] text-[#00D4FF]/80 uppercase">Belote Royale · 2026</span>
+          <span className="text-xs font-mono tracking-[0.12em] text-[#00D4FF]/80 uppercase">Belote Royale · 2026</span>
         </motion.div>
 
         {/* Title */}
         <motion.h1
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3, duration: 0.6 }}
-          className="text-5xl md:text-7xl font-bold leading-tight mb-6"
+          transition={{ delay: 0.3 }}
+          className="text-4xl sm:text-5xl md:text-7xl font-bold leading-tight mb-4"
         >
           <span className="text-white">La </span>
           <span className="text-gradient-cyan">Belote</span>
@@ -89,9 +84,9 @@ export default function HomePage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
-          className="text-[#6b7f8a] text-base md:text-lg mb-10 max-w-md mx-auto leading-relaxed"
+          className="text-[#6b7f8a] text-sm sm:text-base mb-8 max-w-sm mx-auto leading-relaxed"
         >
-          Belote Simple ou Contrée. Cartes vectorielles, IA experte, design ultra premium. Crée ton salon, défie tes amis ou apprends en mode tutoriel.
+          Belote Simple ou Contrée. IA experte, design premium. Solo ou multijoueur.
         </motion.p>
 
         {/* Input Card */}
@@ -100,42 +95,44 @@ export default function HomePage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6 }}
           onSubmit={handleSubmit}
-          className="premium-card rounded-2xl p-6 max-w-md mx-auto"
+          className="premium-card rounded-2xl p-5 w-full"
         >
           <label className="block text-left text-xs font-mono tracking-[0.1em] uppercase text-[#00D4FF]/70 mb-3">
             Choisis ton pseudo
           </label>
-          <div className="flex gap-3">
+          <div className="flex gap-2">
             <input
               type="text"
               value={pseudo}
               onChange={(e) => { setPseudo(e.target.value); setError(''); }}
               placeholder="ex: Joker_92"
               maxLength={15}
-              className="flex-1 px-4 py-3 bg-[#0d1520] border border-[rgba(0,212,255,0.12)] rounded-xl text-white placeholder:text-[#3a4a56] focus:outline-none focus:border-[#00D4FF]/50 focus:shadow-[0_0_15px_rgba(0,212,255,0.15)] transition-all font-mono"
+              autoComplete="off"
+              autoCapitalize="off"
+              className="flex-1 px-3 py-3 bg-[#0d1520] border border-[rgba(0,212,255,0.12)] rounded-xl text-white placeholder:text-[#3a4a56] focus:outline-none focus:border-[#00D4FF]/50 transition-all font-mono text-sm"
             />
             <button
               type="submit"
-              className="btn-glow px-6 py-3 rounded-xl text-sm font-bold whitespace-nowrap"
+              className="btn-glow px-5 py-3 rounded-xl text-sm font-bold whitespace-nowrap"
             >
-              Lobby →
+              Entrer →
             </button>
           </div>
           {error && <p className="text-red-400 text-xs mt-2 text-left">{error}</p>}
 
-          {/* Features row */}
-          <div className="flex justify-between mt-5 pt-4 border-t border-[rgba(0,212,255,0.08)]">
+          {/* Features */}
+          <div className="flex justify-between mt-4 pt-4 border-t border-[rgba(0,212,255,0.08)]">
             <div className="text-center">
-              <div className="text-[#00D4FF] text-lg mb-1">♠</div>
-              <div className="text-[10px] font-mono tracking-wider text-[#6b7f8a] uppercase">32 Cartes</div>
+              <div className="text-[#00D4FF] text-base mb-0.5">♠</div>
+              <div className="text-[9px] font-mono tracking-wider text-[#6b7f8a] uppercase">32 Cartes</div>
             </div>
             <div className="text-center">
-              <div className="text-[#00D4FF] text-lg mb-1">◆</div>
-              <div className="text-[10px] font-mono tracking-wider text-[#6b7f8a] uppercase">IA Experte</div>
+              <div className="text-[#00D4FF] text-base mb-0.5">◆</div>
+              <div className="text-[9px] font-mono tracking-wider text-[#6b7f8a] uppercase">IA Experte</div>
             </div>
             <div className="text-center">
-              <div className="text-[#00D4FF] text-lg mb-1">✦</div>
-              <div className="text-[10px] font-mono tracking-wider text-[#6b7f8a] uppercase">Multijoueur</div>
+              <div className="text-[#00D4FF] text-base mb-0.5">✦</div>
+              <div className="text-[9px] font-mono tracking-wider text-[#6b7f8a] uppercase">Multijoueur</div>
             </div>
           </div>
         </motion.form>
@@ -145,10 +142,10 @@ export default function HomePage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.8 }}
-          className="mt-8 text-sm text-[#6b7f8a] font-mono"
+          className="mt-6 text-sm text-[#6b7f8a] font-mono"
         >
           Pas encore prêt ?{' '}
-          <button onClick={() => router.push('/demo')} className="text-[#00D4FF] underline underline-offset-4 hover:text-[#00FFB2] transition-colors">
+          <button onClick={() => router.push('/demo')} className="text-[#00D4FF] underline underline-offset-4">
             Lance le tutoriel
           </button>
         </motion.p>

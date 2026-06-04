@@ -73,7 +73,7 @@ export default function LobbyPage() {
   const initials = playerName.slice(0, 2).toUpperCase();
 
   return (
-    <div className="min-h-screen bg-[#050508] p-6 relative overflow-hidden">
+    <div className="min-h-[100dvh] bg-[#050508] p-3 sm:p-6 relative overflow-hidden">
       {/* Background glow */}
       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-[#00D4FF]/3 rounded-full blur-[150px]" />
 
@@ -121,9 +121,9 @@ export default function LobbyPage() {
         </motion.div>
 
         {/* Main content */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4">
           {/* Public rooms */}
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="premium-card rounded-2xl p-6">
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="premium-card rounded-2xl p-4 sm:p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <p className="text-[10px] font-mono tracking-[0.15em] text-[#00D4FF]/60 uppercase mb-1">Salons publics</p>

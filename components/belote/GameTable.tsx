@@ -25,10 +25,7 @@ interface GameTableProps {
 }
 
 export function GameTable({ gameState, myPosition, myHand, playableCards, onPlayCard, onTrumpAction, onBidAction, onLeave, announcements }: GameTableProps) {
-  const getRelativePosition = (pos: number) => {
-    const diff = (pos - myPosition + 4) % 4;
-    return (['south', 'west', 'north', 'east'] as const)[diff];
-  };
+  const [showScore, setShowScore] = useState(false);
 
   const getPlayerByRelPos = (relPos: string) => {
     const positions = ['south', 'west', 'north', 'east'];
@@ -43,79 +40,98 @@ export function GameTable({ gameState, myPosition, myHand, playableCards, onPlay
   const myPlayer = gameState.players[myPosition];
 
   return (
-    <div className="w-full h-screen flex overflow-hidden bg-[#050508]">
-      {/* Main game area */}
-      <div className="flex-1 flex flex-col">
-        {/* Contract indicator top-left */}
-        <ContractBadge gameState={gameState} />
-
-        {/* Leave button top-right */}
-        <button onClick={onLeave} className="absolute top-4 right-4 z-30 flex items-center gap-2 px-4 py-2 rounded-lg border border-[rgba(0,212,255,0.15)] text-[#6b7f8a] hover:text-white hover:border-[rgba(0,212,255,0.3)] transition-all text-sm bg-[#0a0d14]/80 backdrop-blur">
+    <div className="w-full h-[100dvh] flex flex-col overflow-hidden bg-[#050508]">
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-3 py-2 z-30 relative bg-[#050508]/90 backdrop-blur border-b border-[rgba(0,212,255,0.08)]">
+        <button
+          onClick={onLeave}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[rgba(0,212,255,0.15)] text-[#6b7f8a] text-xs bg-[#0a0d14]/80"
+        >
           ← Quitter
         </button>
+        <ContractBadgeInline gameState={gameState} />
+        <button
+          onClick={() => setShowScore(s => !s)}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[rgba(0,212,255,0.15)] text-[#00D4FF] text-xs bg-[#0a0d14]/80"
+        >
+          Score
+        </button>
+      </div>
 
-        {/* Game table */}
-        <div className="flex-1 relative">
-          <div className="absolute inset-4 felt-table rounded-3xl overflow-hidden">
-            {/* North player */}
-            <PlayerSlot player={northPlayer} position="north" isActive={gameState.currentPlayerIndex === northPlayer?.position} cardCount={northPlayer?.hand.length || 0} />
-            
-            {/* West player */}
-            <PlayerSlot player={westPlayer} position="west" isActive={gameState.currentPlayerIndex === westPlayer?.position} cardCount={westPlayer?.hand.length || 0} />
-            
-            {/* East player */}
-            <PlayerSlot player={eastPlayer} position="east" isActive={gameState.currentPlayerIndex === eastPlayer?.position} cardCount={eastPlayer?.hand.length || 0} />
+      {/* Score overlay (mobile) */}
+      <AnimatePresence>
+        {showScore && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="absolute top-12 left-0 right-0 z-50 bg-[#0a0d14]/98 border-b border-[rgba(0,212,255,0.15)] p-4"
+          >
+            <ScoreContent gameState={gameState} myPosition={myPosition} />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-            {/* Center trick area */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <TrickDisplay gameState={gameState} myPosition={myPosition} />
-            </div>
+      {/* Main game area — fills remaining height */}
+      <div className="flex-1 relative overflow-hidden">
+        <div className="absolute inset-2 felt-table rounded-2xl overflow-hidden">
 
-            {/* Trump selection UI */}
-            {gameState.phase === 'trump_selection' && gameState.currentPlayerIndex === myPosition && (
-              <TrumpSelectionPanel gameState={gameState} onAction={onTrumpAction} />
-            )}
+          {/* North player */}
+          <PlayerSlot player={northPlayer} position="north" isActive={gameState.currentPlayerIndex === northPlayer?.position} cardCount={northPlayer?.hand.length || 0} />
 
-            {/* Bidding UI */}
-            {gameState.phase === 'bidding' && gameState.currentPlayerIndex === myPosition && (
-              <BiddingPanel gameState={gameState} onAction={onBidAction} />
-            )}
+          {/* West player */}
+          <PlayerSlot player={westPlayer} position="west" isActive={gameState.currentPlayerIndex === westPlayer?.position} cardCount={westPlayer?.hand.length || 0} />
 
-            {/* Bidding info (when not our turn) */}
-            {gameState.phase === 'bidding' && gameState.currentPlayerIndex !== myPosition && (
-              <BiddingInfo gameState={gameState} />
-            )}
+          {/* East player */}
+          <PlayerSlot player={eastPlayer} position="east" isActive={gameState.currentPlayerIndex === eastPlayer?.position} cardCount={eastPlayer?.hand.length || 0} />
 
-            {/* My hand at bottom */}
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-end gap-0.5 z-10">
-              {/* Player avatar */}
-              <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex flex-col items-center">
-                <div className={`w-10 h-10 rounded-full bg-[#00D4FF]/20 border-2 flex items-center justify-center text-[#00D4FF] font-bold text-xs ${gameState.currentPlayerIndex === myPosition ? 'active-player-glow border-[#00D4FF]' : 'border-[#00D4FF]/30'}`}>
-                  {myPlayer?.name.slice(0, 2).toUpperCase()}
-                </div>
+          {/* Center trick */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <TrickDisplay gameState={gameState} myPosition={myPosition} />
+          </div>
+
+          {/* Trump selection */}
+          {gameState.phase === 'trump_selection' && gameState.currentPlayerIndex === myPosition && (
+            <TrumpSelectionPanel gameState={gameState} onAction={onTrumpAction} />
+          )}
+
+          {/* Bidding */}
+          {gameState.phase === 'bidding' && gameState.currentPlayerIndex === myPosition && (
+            <BiddingPanel gameState={gameState} onAction={onBidAction} />
+          )}
+          {gameState.phase === 'bidding' && gameState.currentPlayerIndex !== myPosition && (
+            <BiddingInfo gameState={gameState} />
+          )}
+
+          {/* My hand at bottom */}
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-end z-10" style={{ gap: myHand.length > 6 ? '0px' : '2px' }}>
+            {/* My avatar */}
+            <div className="absolute -top-10 left-1/2 -translate-x-1/2 flex flex-col items-center">
+              <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center font-bold text-[10px] ${gameState.currentPlayerIndex === myPosition ? 'bg-[#00D4FF]/20 border-[#00D4FF] text-[#00D4FF] active-player-glow' : 'bg-[#0d1520] border-[#00D4FF]/30 text-[#6b7f8a]'}`}>
+                {myPlayer?.name.slice(0, 2).toUpperCase()}
               </div>
-              {myHand.map((card, i) => (
-                <motion.div
-                  key={card.id}
-                  initial={{ y: 50, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: i * 0.05 }}
-                  style={{ transform: `rotate(${(i - myHand.length / 2) * 2}deg)` }}
-                >
-                  <PlayingCard
-                    card={card}
-                    playable={playableCards.includes(card.id)}
-                    onClick={() => onPlayCard(card.id)}
-                  />
-                </motion.div>
-              ))}
             </div>
+            {myHand.map((card, i) => (
+              <motion.div
+                key={card.id}
+                initial={{ y: 50, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: i * 0.05 }}
+                style={{
+                  transform: `rotate(${(i - myHand.length / 2) * (myHand.length > 6 ? 3 : 2)}deg)`,
+                  marginLeft: myHand.length > 6 ? '-6px' : '0',
+                }}
+              >
+                <PlayingCard
+                  card={card}
+                  playable={playableCards.includes(card.id)}
+                  onClick={() => onPlayCard(card.id)}
+                />
+              </motion.div>
+            ))}
           </div>
         </div>
       </div>
-
-      {/* Right sidebar - Score */}
-      <ScoreSidebar gameState={gameState} myPosition={myPosition} />
     </div>
   );
 }
@@ -127,17 +143,14 @@ function PlayerSlot({ player, position, isActive, cardCount }: {
   cardCount: number;
 }) {
   if (!player) return null;
-  
-  const positionLabels: Record<string, string> = { north: 'NORD', south: 'SUD', west: 'OUEST', east: 'EST' };
   const initials = player.name.slice(0, 2).toUpperCase();
 
   const posStyles: Record<string, string> = {
-    north: 'top-4 left-1/2 -translate-x-1/2 flex-col items-center',
-    west: 'left-4 top-1/2 -translate-y-1/2 flex-col items-center',
-    east: 'right-4 top-1/2 -translate-y-1/2 flex-col items-center',
+    north: 'top-2 left-1/2 -translate-x-1/2 flex-col items-center',
+    west: 'left-1 top-1/2 -translate-y-1/2 flex-col items-center',
+    east: 'right-1 top-1/2 -translate-y-1/2 flex-col items-center',
     south: 'hidden',
   };
-
   const cardLayout: Record<string, string> = {
     north: 'flex-row gap-0.5',
     west: 'flex-col gap-0.5',
@@ -147,18 +160,17 @@ function PlayerSlot({ player, position, isActive, cardCount }: {
 
   return (
     <div className={`absolute ${posStyles[position]} flex z-10`}>
-      <div className="flex items-center gap-2 mb-2">
-        <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center font-bold text-xs ${isActive ? 'bg-[#00D4FF]/20 border-[#00D4FF] text-[#00D4FF] active-player-glow' : 'bg-[#0d1520] border-[rgba(0,212,255,0.2)] text-[#6b7f8a]'}`}>
+      <div className="flex items-center gap-1 mb-1">
+        <div className={`w-7 h-7 sm:w-9 sm:h-9 rounded-full border-2 flex items-center justify-center font-bold text-[9px] sm:text-xs ${isActive ? 'bg-[#00D4FF]/20 border-[#00D4FF] text-[#00D4FF] active-player-glow' : 'bg-[#0d1520] border-[rgba(0,212,255,0.2)] text-[#6b7f8a]'}`}>
           {initials}
         </div>
-        <div>
-          <p className="text-white text-sm font-medium">{player.name}</p>
-          <p className="text-[#6b7f8a] text-[10px] font-mono uppercase">{positionLabels[position]}</p>
+        <div className="hidden sm:block">
+          <p className="text-white text-xs font-medium">{player.name}</p>
         </div>
       </div>
       <div className={`flex ${cardLayout[position]}`}>
         {Array.from({ length: Math.min(cardCount, 8) }).map((_, i) => (
-          <PlayingCard key={i} card={{ id: 'h', suit: 'spades', rank: '7' }} faceDown mini={position !== 'north'} small={position === 'north'} />
+          <PlayingCard key={i} card={{ id: 'h', suit: 'spades', rank: '7' }} faceDown mini />
         ))}
       </div>
     </div>
@@ -168,14 +180,13 @@ function PlayerSlot({ player, position, isActive, cardCount }: {
 function TrickDisplay({ gameState, myPosition }: { gameState: GameState; myPosition: number }) {
   const trick = gameState.currentTrick;
   if (!trick || trick.cards.length === 0) {
-    // Afficher l'atout si défini
     if (gameState.trumpSuit) {
       return (
-        <div className="flex flex-col items-center gap-2 opacity-40">
-          <span className={`text-4xl ${gameState.trumpSuit === 'hearts' || gameState.trumpSuit === 'diamonds' ? 'text-red-400' : 'text-white'}`}>
+        <div className="flex flex-col items-center gap-1 opacity-40">
+          <span className={`text-3xl sm:text-4xl ${gameState.trumpSuit === 'hearts' || gameState.trumpSuit === 'diamonds' ? 'text-red-400' : 'text-white'}`}>
             {suitSymbols[gameState.trumpSuit]}
           </span>
-          <span className="text-[10px] font-mono text-[#6b7f8a] uppercase">Atout</span>
+          <span className="text-[9px] font-mono text-[#6b7f8a] uppercase">Atout</span>
         </div>
       );
     }
@@ -183,18 +194,17 @@ function TrickDisplay({ gameState, myPosition }: { gameState: GameState; myPosit
   }
 
   return (
-    <div className="relative w-44 h-44">
+    <div className="relative w-32 h-32 sm:w-44 sm:h-44">
       <AnimatePresence>
         {trick.cards.map((play) => {
           const relDiff = (play.playerIndex - myPosition + 4) % 4;
           const offsets = [
-            { x: 0, y: 35 },   // south (me)
-            { x: -35, y: 0 },  // west
-            { x: 0, y: -35 },  // north
-            { x: 35, y: 0 },   // east
+            { x: 0, y: 25 },
+            { x: -25, y: 0 },
+            { x: 0, y: -25 },
+            { x: 25, y: 0 },
           ];
           const off = offsets[relDiff];
-          
           return (
             <motion.div
               key={play.card.id}
@@ -212,24 +222,22 @@ function TrickDisplay({ gameState, myPosition }: { gameState: GameState; myPosit
   );
 }
 
-function ContractBadge({ gameState }: { gameState: GameState }) {
+function ContractBadgeInline({ gameState }: { gameState: GameState }) {
   const bs = gameState.biddingState;
   const contract = bs?.highestBid;
-
   return (
-    <div className="absolute top-4 left-4 z-30 bg-[#0a0d14]/90 backdrop-blur border border-[rgba(0,212,255,0.15)] rounded-xl px-4 py-2">
-      <p className="text-[10px] font-mono text-[#00D4FF]/60 uppercase tracking-wider">Contrat</p>
+    <div className="flex items-center gap-1">
+      <span className="text-[9px] font-mono text-[#00D4FF]/50 uppercase">Contrat:</span>
       {contract ? (
-        <p className="text-white font-bold">
+        <span className="text-xs font-bold text-white">
           <span className={contract.suit === 'hearts' || contract.suit === 'diamonds' ? 'text-red-400' : 'text-white'}>
             {suitSymbols[contract.suit || '']}
           </span>{' '}
-          <span className="text-[#00D4FF]">{contract.value} pts</span>
-          {bs?.isContred && <span className="text-red-400 ml-1">×2</span>}
-          {bs?.isRecontred && <span className="text-orange-400 ml-1">×4</span>}
-        </p>
+          <span className="text-[#00D4FF]">{contract.value}</span>
+          {bs?.isContred && <span className="text-red-400">×2</span>}
+        </span>
       ) : (
-        <p className="text-[#6b7f8a]">—</p>
+        <span className="text-xs text-[#6b7f8a]">—</span>
       )}
     </div>
   );
@@ -238,7 +246,6 @@ function ContractBadge({ gameState }: { gameState: GameState }) {
 function TrumpSelectionPanel({ gameState, onAction }: { gameState: GameState; onAction: (a: 'take' | 'pass', suit?: Suit) => void }) {
   const ts = gameState.trumpSelection;
   if (!ts) return null;
-
   const suits: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
   const turnedSuit = ts.turnedCard?.suit;
 
@@ -246,36 +253,36 @@ function TrumpSelectionPanel({ gameState, onAction }: { gameState: GameState; on
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="absolute bottom-32 left-1/2 -translate-x-1/2 z-20 bg-[#0a0d14]/95 backdrop-blur-md border border-[rgba(0,212,255,0.2)] rounded-2xl p-5 w-[420px] max-w-[80vw] shadow-[0_0_40px_rgba(0,212,255,0.1)]"
+      className="absolute bottom-20 sm:bottom-28 left-1/2 -translate-x-1/2 z-20 bg-[#0a0d14]/98 backdrop-blur-md border border-[rgba(0,212,255,0.2)] rounded-2xl p-4 w-[90vw] sm:w-[420px] max-w-sm shadow-[0_0_40px_rgba(0,212,255,0.1)]"
     >
       {ts.phase === 'first_round' ? (
         <>
-          <p className="text-[10px] font-mono text-[#00D4FF]/60 uppercase tracking-wider mb-2">Choix de l&apos;atout — 1er tour</p>
-          <p className="text-white font-semibold mb-4">
-            Carte retournée : <span className={`text-xl ${turnedSuit === 'hearts' || turnedSuit === 'diamonds' ? 'text-red-400' : 'text-white'}`}>{suitSymbols[turnedSuit || '']}</span> — Prendre ?
+          <p className="text-[9px] font-mono text-[#00D4FF]/60 uppercase tracking-wider mb-1">1er tour</p>
+          <p className="text-white font-semibold text-sm mb-3">
+            Carte : <span className={`text-lg ${turnedSuit === 'hearts' || turnedSuit === 'diamonds' ? 'text-red-400' : 'text-white'}`}>{suitSymbols[turnedSuit || '']}</span> — Prendre ?
           </p>
-          <div className="flex gap-3">
+          <div className="flex gap-2">
             <button onClick={() => onAction('take')} className="flex-1 btn-glow rounded-xl py-2.5 text-sm font-bold">
               Prendre {suitSymbols[turnedSuit || '']}
             </button>
-            <button onClick={() => onAction('pass')} className="flex-1 py-2.5 rounded-xl border border-[rgba(0,212,255,0.2)] text-[#6b7f8a] hover:text-white hover:border-[rgba(0,212,255,0.4)] transition-all text-sm">
+            <button onClick={() => onAction('pass')} className="flex-1 py-2.5 rounded-xl border border-[rgba(0,212,255,0.2)] text-[#6b7f8a] text-sm">
               Passer
             </button>
           </div>
         </>
       ) : (
         <>
-          <p className="text-[10px] font-mono text-[#00D4FF]/60 uppercase tracking-wider mb-2">Choix de l&apos;atout — 2ème tour</p>
-          <p className="text-white/80 text-sm mb-4">Choisissez une couleur (sauf {suitSymbols[turnedSuit || '']})</p>
-          <div className="grid grid-cols-4 gap-2 mb-4">
+          <p className="text-[9px] font-mono text-[#00D4FF]/60 uppercase tracking-wider mb-1">2ème tour</p>
+          <p className="text-white/80 text-xs mb-3">Choisissez (sauf {suitSymbols[turnedSuit || '']})</p>
+          <div className="grid grid-cols-3 gap-2 mb-3">
             {suits.filter(s => s !== turnedSuit).map(s => (
-              <button key={s} onClick={() => onAction('take', s)} className={`py-3 rounded-xl border border-[rgba(0,212,255,0.15)] hover:border-[#00D4FF]/50 hover:bg-[#00D4FF]/5 transition-all flex flex-col items-center gap-1`}>
-                <span className={`text-2xl ${s === 'hearts' || s === 'diamonds' ? 'text-red-400' : 'text-white'}`}>{suitSymbols[s]}</span>
-                <span className="text-[10px] text-[#6b7f8a]">{suitNames[s]}</span>
+              <button key={s} onClick={() => onAction('take', s)} className="py-2.5 rounded-xl border border-[rgba(0,212,255,0.15)] hover:border-[#00D4FF]/50 flex flex-col items-center gap-1">
+                <span className={`text-xl ${s === 'hearts' || s === 'diamonds' ? 'text-red-400' : 'text-white'}`}>{suitSymbols[s]}</span>
+                <span className="text-[9px] text-[#6b7f8a]">{suitNames[s]}</span>
               </button>
             ))}
           </div>
-          <button onClick={() => onAction('pass')} className="w-full py-2.5 rounded-xl border border-[rgba(0,212,255,0.2)] text-[#6b7f8a] hover:text-white transition-all text-sm">
+          <button onClick={() => onAction('pass')} className="w-full py-2 rounded-xl border border-[rgba(0,212,255,0.2)] text-[#6b7f8a] text-sm">
             Passer
           </button>
         </>
@@ -289,7 +296,6 @@ function BiddingPanel({ gameState, onAction }: { gameState: GameState; onAction:
   if (!bs) return null;
   const [selectedValue, setSelectedValue] = useState(bs.highestBid ? bs.highestBid.value + 10 : 80);
   const [selectedSuit, setSelectedSuit] = useState<Suit>('spades');
-
   const suits: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
   const values = [80, 90, 100, 110, 120, 130, 140, 150, 160];
   const minBid = bs.highestBid ? bs.highestBid.value + 10 : 80;
@@ -298,58 +304,58 @@ function BiddingPanel({ gameState, onAction }: { gameState: GameState; onAction:
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="absolute bottom-32 left-1/2 -translate-x-1/2 z-20 bg-[#0a0d14]/95 backdrop-blur-md border border-[rgba(0,212,255,0.2)] rounded-2xl p-5 w-[500px] max-w-[85vw] shadow-[0_0_40px_rgba(0,212,255,0.1)]"
+      className="absolute bottom-20 sm:bottom-28 left-1/2 -translate-x-1/2 z-20 bg-[#0a0d14]/98 backdrop-blur-md border border-[rgba(0,212,255,0.2)] rounded-2xl p-4 w-[92vw] sm:w-[500px] max-w-sm shadow-[0_0_40px_rgba(0,212,255,0.1)]"
     >
-      <p className="text-[10px] font-mono text-[#00D4FF]/60 uppercase tracking-wider mb-1">Enchères Belote Contrée</p>
-      <p className="text-white font-semibold mb-1">À toi d&apos;annoncer</p>
-      <p className="text-[#6b7f8a] text-sm mb-4">
-        {bs.highestBid ? `Enchère actuelle : ${bs.highestBid.value} ${suitSymbols[bs.highestBid.suit || '']}` : 'Aucune enchère pour l\'instant. Mise minimum : 80.'}
+      <p className="text-[9px] font-mono text-[#00D4FF]/60 uppercase tracking-wider mb-1">Enchères Contrée</p>
+      <p className="text-white font-semibold text-sm mb-1">À toi d&apos;annoncer</p>
+      <p className="text-[#6b7f8a] text-xs mb-3">
+        {bs.highestBid ? `En cours : ${bs.highestBid.value} ${suitSymbols[bs.highestBid.suit || '']}` : 'Mise min : 80'}
       </p>
 
       {/* Valeurs */}
-      <div className="mb-3">
-        <p className="text-[10px] font-mono text-[#6b7f8a] uppercase mb-2">Valeur</p>
-        <div className="flex flex-wrap gap-1.5">
+      <div className="mb-2">
+        <p className="text-[9px] font-mono text-[#6b7f8a] uppercase mb-1">Valeur</p>
+        <div className="flex flex-wrap gap-1">
           {values.filter(v => v >= minBid).map(v => (
-            <button key={v} onClick={() => setSelectedValue(v)} className={`px-3 py-1.5 rounded-lg border text-xs font-mono transition-all ${selectedValue === v ? 'border-[#00D4FF] bg-[#00D4FF]/10 text-[#00D4FF]' : 'border-[rgba(0,212,255,0.1)] text-[#6b7f8a] hover:border-[rgba(0,212,255,0.3)]'}`}>
+            <button key={v} onClick={() => setSelectedValue(v)} className={`px-2.5 py-1 rounded-lg border text-xs font-mono transition-all ${selectedValue === v ? 'border-[#00D4FF] bg-[#00D4FF]/10 text-[#00D4FF]' : 'border-[rgba(0,212,255,0.1)] text-[#6b7f8a]'}`}>
               {v}
             </button>
           ))}
-          <button onClick={() => setSelectedValue(160)} className={`px-3 py-1.5 rounded-lg border text-xs font-mono transition-all ${selectedValue === 160 ? 'border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700]' : 'border-[rgba(0,212,255,0.1)] text-[#6b7f8a] hover:border-[rgba(0,212,255,0.3)]'}`}>
+          <button onClick={() => setSelectedValue(160)} className={`px-2.5 py-1 rounded-lg border text-xs font-mono ${selectedValue === 160 ? 'border-[#FFD700] bg-[#FFD700]/10 text-[#FFD700]' : 'border-[rgba(0,212,255,0.1)] text-[#6b7f8a]'}`}>
             Capot
           </button>
         </div>
       </div>
 
       {/* Couleurs */}
-      <div className="mb-4">
-        <p className="text-[10px] font-mono text-[#6b7f8a] uppercase mb-2">Atout</p>
-        <div className="flex gap-2">
+      <div className="mb-3">
+        <p className="text-[9px] font-mono text-[#6b7f8a] uppercase mb-1">Atout</p>
+        <div className="grid grid-cols-4 gap-1">
           {suits.map(s => (
-            <button key={s} onClick={() => setSelectedSuit(s)} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm transition-all ${selectedSuit === s ? 'border-[#00D4FF] bg-[#00D4FF]/10' : 'border-[rgba(0,212,255,0.1)] hover:border-[rgba(0,212,255,0.3)]'}`}>
+            <button key={s} onClick={() => setSelectedSuit(s)} className={`flex flex-col items-center py-1.5 rounded-lg border text-xs transition-all ${selectedSuit === s ? 'border-[#00D4FF] bg-[#00D4FF]/10' : 'border-[rgba(0,212,255,0.1)]'}`}>
               <span className={s === 'hearts' || s === 'diamonds' ? 'text-red-400' : 'text-white'}>{suitSymbols[s]}</span>
-              <span className="text-[#6b7f8a] text-xs">{suitNames[s]}</span>
+              <span className="text-[8px] text-[#6b7f8a]">{suitNames[s]}</span>
             </button>
           ))}
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2">
-        <button onClick={() => onAction('bid', selectedValue, selectedSuit)} className="btn-glow rounded-xl px-5 py-2.5 text-sm font-bold">
-          Annoncer {selectedValue} {suitSymbols[selectedSuit]}
+      <div className="flex gap-1.5 flex-wrap">
+        <button onClick={() => onAction('bid', selectedValue, selectedSuit)} className="btn-glow rounded-xl px-3 py-2 text-xs font-bold flex-1">
+          {selectedValue} {suitSymbols[selectedSuit]}
         </button>
-        <button onClick={() => onAction('pass')} className="px-5 py-2.5 rounded-xl border border-[rgba(0,212,255,0.2)] text-[#6b7f8a] hover:text-white transition-all text-sm">
+        <button onClick={() => onAction('pass')} className="px-3 py-2 rounded-xl border border-[rgba(0,212,255,0.2)] text-[#6b7f8a] text-xs">
           Passer
         </button>
         {bs.highestBid && !bs.isContred && bs.highestBid.playerIndex % 2 !== gameState.currentPlayerIndex % 2 && (
-          <button onClick={() => onAction('contre')} className="px-4 py-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-500/30 transition-all">
+          <button onClick={() => onAction('contre')} className="px-3 py-2 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 text-xs">
             Contre ×2
           </button>
         )}
         {bs.isContred && !bs.isRecontred && bs.highestBid && bs.highestBid.playerIndex % 2 === gameState.currentPlayerIndex % 2 && (
-          <button onClick={() => onAction('surcontre')} className="px-4 py-2.5 rounded-xl bg-orange-500/20 border border-orange-500/30 text-orange-400 text-sm font-medium hover:bg-orange-500/30 transition-all">
-            Surcontre ×4
+          <button onClick={() => onAction('surcontre')} className="px-3 py-2 rounded-xl bg-orange-500/20 border border-orange-500/30 text-orange-400 text-xs">
+            ×4
           </button>
         )}
       </div>
@@ -364,99 +370,59 @@ function BiddingInfo({ gameState }: { gameState: GameState }) {
   const lastBid = bs.bids[bs.bids.length - 1];
 
   return (
-    <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 bg-[#0a0d14]/80 backdrop-blur border border-[rgba(0,212,255,0.15)] rounded-xl px-4 py-2">
-      {lastBid ? (
-        <p className="text-sm text-white/80">
+    <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 bg-[#0a0d14]/80 backdrop-blur border border-[rgba(0,212,255,0.15)] rounded-xl px-3 py-1.5">
+      {lastBid && (
+        <p className="text-xs text-white/80">
           <span className="text-[#00D4FF]">{gameState.players[lastBid.playerIndex]?.name}</span> : {lastBid.value} {suitSymbols[lastBid.suit || '']}
         </p>
-      ) : null}
-      <p className="text-xs text-[#6b7f8a] font-mono mt-0.5">
-        {currentPlayer?.name} réfléchit...
-      </p>
+      )}
+      <p className="text-[10px] text-[#6b7f8a] font-mono">{currentPlayer?.name} réfléchit...</p>
     </div>
   );
 }
 
-function ScoreSidebar({ gameState, myPosition }: { gameState: GameState; myPosition: number }) {
+function ScoreContent({ gameState, myPosition }: { gameState: GameState; myPosition: number }) {
   const myTeam = myPosition % 2;
-  const team0Label = myTeam === 0 ? 'Nous (Sud+Nord)' : 'Eux (Sud+Nord)';
-  const team1Label = myTeam === 1 ? 'Nous (Ouest+Est)' : 'Eux (Ouest+Est)';
-  
-  // Plis remportés this round
+  const team0Label = myTeam === 0 ? 'Nous' : 'Eux';
+  const team1Label = myTeam === 1 ? 'Nous' : 'Eux';
   const team0Tricks = gameState.tricks.filter(t => t.winnerIndex !== null && t.winnerIndex % 2 === 0).length;
   const team1Tricks = gameState.tricks.filter(t => t.winnerIndex !== null && t.winnerIndex % 2 === 1).length;
 
   return (
-    <div className="w-64 bg-[#0a0d14] border-l border-[rgba(0,212,255,0.1)] p-4 flex flex-col gap-4 overflow-y-auto">
-      {/* Score header */}
-      <div className="border-b border-[rgba(0,212,255,0.1)] pb-3">
-        <div className="flex items-center justify-between mb-1">
-          <p className="text-[10px] font-mono text-[#00D4FF]/60 uppercase tracking-wider">Score</p>
-          <span className="text-[10px] font-mono text-[#6b7f8a] uppercase">{gameState.mode === 'simple' ? 'Simple' : 'Contrée'}</span>
-        </div>
-        <p className="text-white font-bold">Objectif <span className="text-[#00D4FF]">{gameState.targetScore}</span></p>
-      </div>
-
-      {/* Team scores */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-white/80">{team0Label}</span>
-          <span className="text-xl font-bold text-[#00D4FF] font-mono">{gameState.totalScores[0]}</span>
-        </div>
-        <div className="w-full h-1 bg-[#0d1520] rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-[#00D4FF] to-[#00FFB2] rounded-full transition-all" style={{ width: `${Math.min(100, (gameState.totalScores[0] / gameState.targetScore) * 100)}%` }} />
-        </div>
-
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-white/80">{team1Label}</span>
-          <span className="text-xl font-bold text-[#00D4FF] font-mono">{gameState.totalScores[1]}</span>
-        </div>
-        <div className="w-full h-1 bg-[#0d1520] rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-[#00D4FF] to-[#00FFB2] rounded-full transition-all" style={{ width: `${Math.min(100, (gameState.totalScores[1] / gameState.targetScore) * 100)}%` }} />
-        </div>
-      </div>
-
-      {/* Contract info */}
-      {gameState.biddingState?.highestBid && (
-        <div className="border-t border-[rgba(0,212,255,0.1)] pt-3">
-          <p className="text-[10px] font-mono text-[#00D4FF]/60 uppercase tracking-wider mb-1">Contrat en cours</p>
-          <p className="text-[#00D4FF] font-bold font-mono">{gameState.biddingState.highestBid.value} pts</p>
-        </div>
-      )}
-
-      {/* Tricks won */}
-      <div className="border-t border-[rgba(0,212,255,0.1)] pt-3">
-        <p className="text-[10px] font-mono text-[#00D4FF]/60 uppercase tracking-wider mb-2">Plis remportés</p>
-        <div className="flex justify-between text-sm">
-          <span className="text-white/80 font-mono">Nous : <span className="text-[#00D4FF] font-bold">{myTeam === 0 ? team0Tricks : team1Tricks}</span></span>
-          <span className="text-white/80 font-mono">Eux : <span className="text-[#00D4FF] font-bold">{myTeam === 0 ? team1Tricks : team0Tricks}</span></span>
-        </div>
-      </div>
-
-      {/* Trump suit */}
-      {gameState.trumpSuit && (
-        <div className="border-t border-[rgba(0,212,255,0.1)] pt-3">
-          <p className="text-[10px] font-mono text-[#00D4FF]/60 uppercase tracking-wider mb-1">Atout</p>
-          <p className={`text-2xl ${gameState.trumpSuit === 'hearts' || gameState.trumpSuit === 'diamonds' ? 'text-red-400' : 'text-white'}`}>
-            {suitSymbols[gameState.trumpSuit]} {suitNames[gameState.trumpSuit]}
-          </p>
-        </div>
-      )}
-
-      {/* Round history */}
-      {gameState.roundScores.length > 0 && (
-        <div className="border-t border-[rgba(0,212,255,0.1)] pt-3">
-          <p className="text-[10px] font-mono text-[#00D4FF]/60 uppercase tracking-wider mb-2">Historique</p>
-          <div className="space-y-1 max-h-32 overflow-y-auto">
-            {gameState.roundScores.map((score, i) => (
-              <div key={i} className="flex justify-between text-xs text-[#6b7f8a] font-mono">
-                <span>M{i + 1}</span>
-                <span>{score.team0Points} — {score.team1Points}</span>
-              </div>
-            ))}
+    <div className="grid grid-cols-2 gap-4">
+      <div>
+        <p className="text-[9px] font-mono text-[#00D4FF]/60 uppercase mb-1">Score (/{gameState.targetScore})</p>
+        <div className="space-y-2">
+          <div>
+            <div className="flex justify-between text-sm mb-0.5">
+              <span className="text-white/80">{team0Label}</span>
+              <span className="text-[#00D4FF] font-bold font-mono">{gameState.totalScores[0]}</span>
+            </div>
+            <div className="w-full h-1 bg-[#0d1520] rounded-full">
+              <div className="h-full bg-gradient-to-r from-[#00D4FF] to-[#00FFB2] rounded-full" style={{ width: `${Math.min(100, (gameState.totalScores[0] / gameState.targetScore) * 100)}%` }} />
+            </div>
+          </div>
+          <div>
+            <div className="flex justify-between text-sm mb-0.5">
+              <span className="text-white/80">{team1Label}</span>
+              <span className="text-[#00D4FF] font-bold font-mono">{gameState.totalScores[1]}</span>
+            </div>
+            <div className="w-full h-1 bg-[#0d1520] rounded-full">
+              <div className="h-full bg-gradient-to-r from-[#00D4FF] to-[#00FFB2] rounded-full" style={{ width: `${Math.min(100, (gameState.totalScores[1] / gameState.targetScore) * 100)}%` }} />
+            </div>
           </div>
         </div>
-      )}
+      </div>
+      <div>
+        <p className="text-[9px] font-mono text-[#00D4FF]/60 uppercase mb-1">Plis / Atout</p>
+        <p className="text-sm text-white/80 font-mono">Nous: <span className="text-[#00D4FF] font-bold">{myTeam === 0 ? team0Tricks : team1Tricks}</span></p>
+        <p className="text-sm text-white/80 font-mono">Eux: <span className="text-[#00D4FF] font-bold">{myTeam === 0 ? team1Tricks : team0Tricks}</span></p>
+        {gameState.trumpSuit && (
+          <p className={`text-lg mt-1 ${gameState.trumpSuit === 'hearts' || gameState.trumpSuit === 'diamonds' ? 'text-red-400' : 'text-white'}`}>
+            {suitSymbols[gameState.trumpSuit]}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

@@ -17,6 +17,14 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Belote en Ligne | Jeu de cartes multijoueur",
   description: "Jouez à la Belote Simple et Contrée en ligne avec vos amis. Interface élégante, temps réel, gratuit.",
+  themeColor: '#050508',
+};
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
