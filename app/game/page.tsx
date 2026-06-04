@@ -23,6 +23,7 @@ function GamePageContent() {
   const [myPosition, setMyPosition] = useState<number>(0);
   const prevTrickCountRef = useRef(0);
   const prevTurnRef = useRef<number | null>(null);
+  const scoringTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => { loadFromSession(); }, [loadFromSession]);
   useEffect(() => { if (!playerName || !roomId) router.push('/lobby'); }, [playerName, roomId, router]);
@@ -55,13 +56,6 @@ function GamePageContent() {
       } else {
         setGameState(null);
       }
-      // Si phase 'scoring', déclencher next_round après 2.5s
-      if (data.gameState?.phase === 'scoring' && roomId) {
-        setTimeout(async () => {
-          try { await gameApi('next_round', { roomId }); } catch { /* ignore */ }
-          pollState();
-        }, 2500);
-      }
     } catch { /* ignore */ }
   }, [roomId, playerId]);
 
@@ -70,6 +64,21 @@ function GamePageContent() {
     const interval = setInterval(pollState, 800);
     return () => clearInterval(interval);
   }, [pollState]);
+
+  // FIXED: Auto-advance scoring screen after 2.5s
+  useEffect(() => {
+    if (gameState?.phase === 'scoring' && roomId) {
+      if (scoringTimeoutRef.current) clearTimeout(scoringTimeoutRef.current);
+      scoringTimeoutRef.current = setTimeout(async () => {
+        try {
+          await gameApi('next_round', { roomId });
+        } catch { /* ignore */ }
+      }, 2500);
+      return () => {
+        if (scoringTimeoutRef.current) clearTimeout(scoringTimeoutRef.current);
+      };
+    }
+  }, [gameState?.phase, roomId]);
 
   const handleStartGame = async () => {
     if (!roomId || !playerId) return;
@@ -81,15 +90,16 @@ function GamePageContent() {
 
   const handleLeave = async () => {
     if (!playerId) return;
+    if (scoringTimeoutRef.current) clearTimeout(scoringTimeoutRef.current);
     await gameApi('leave_room', { playerId });
     router.push('/lobby');
   };
 
   const handlePlayCard = async (cardId: string) => {
-    if (!roomId || !playableCards.includes(cardId)) return;
+    if (!roomId || !playableCards.includes(cardId) || !playerId) return;
     playCardSound();
     try {
-      await gameApi('play_card', { roomId, playerIndex: myPosition, cardId });
+      await gameApi('play_card', { roomId, playerIndex: myPosition, cardId, playerId });
       setTimeout(pollState, 100);
     } catch { /* ignore */ }
   };
@@ -206,7 +216,7 @@ function WaitingRoom({ room, playerId, onStart, onLeave }: {
   if (!room) return <LoadingScreen />;
 
   const isCreator = room.creatorId === playerId;
-  const canStart = room.players.length >= 1; // Can start anytime, bots fill remaining
+  const canStart = room.players.length >= 1;
 
   return (
     <div className="min-h-screen bg-[#050508] flex items-center justify-center relative overflow-hidden">
@@ -214,7 +224,7 @@ function WaitingRoom({ room, playerId, onStart, onLeave }: {
         <div className="absolute top-1/3 left-1/3 w-[500px] h-[500px] bg-[#00D4FF]/3 rounded-full blur-[150px]" />
       </div>
       
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="premium-card rounded-2xl p-8 w-[520px] max-w-[90vw] relative z-10 shadow-[0_0_60px_rgba(0,212,255,0.05)]">
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="premium-card rounded-2xl p-8 w-[520px] max-w-[90vw] relative z-10 shadow-[0_0_60px_rgba(0,212,255,0.15)]">
         <div className="text-center mb-6">
           <h2 className="text-2xl font-bold text-white">{room.name}</h2>
           <p className="text-[#6b7f8a] text-sm mt-1 font-mono">
@@ -228,7 +238,6 @@ function WaitingRoom({ room, playerId, onStart, onLeave }: {
           )}
         </div>
 
-        {/* Players */}
         <div className="space-y-2 mb-6">
           {[0, 1, 2, 3].map(i => {
             const player = room.players[i];
@@ -237,7 +246,7 @@ function WaitingRoom({ room, playerId, onStart, onLeave }: {
             const isBot = player?.id.startsWith('bot_');
             return (
               <div key={i} className={`flex items-center gap-3 p-3 rounded-xl border ${player ? 'bg-[#0d1520]/50 border-[rgba(0,212,255,0.15)]' : 'border-dashed border-[rgba(0,212,255,0.1)]'}`}>
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold ${player ? (i % 2 === 0 ? 'bg-[#00D4FF]/15 text-[#00D4FF] border border-[#00D4FF]/30' : 'bg-[#00FFB2]/15 text-[#00FFB2] border border-[#00FFB2]/30') : 'bg-[#0d1520] text-[#3a4a56] border border-[rgba(0,212,255,0.1)]'}`}>
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold ${player ? (i % 2 === 0 ? 'bg-[#00D4FF]/15 text-[#00D4FF] border border-[#00D4FF]/30' : 'bg-white/5 text-white/50 border border-white/10') : 'bg-[#0d1520]/50 border border-[#00D4FF]/10'}`}>
                   {player ? player.name.slice(0, 2).toUpperCase() : '?'}
                 </div>
                 <div className="flex-1">
@@ -253,9 +262,8 @@ function WaitingRoom({ room, playerId, onStart, onLeave }: {
           })}
         </div>
 
-        {/* Actions */}
         <div className="flex gap-3">
-          <button onClick={onLeave} className="flex-1 py-2.5 rounded-xl border border-[rgba(0,212,255,0.15)] text-[#6b7f8a] hover:text-white hover:border-[rgba(0,212,255,0.3)] transition-all text-sm">
+          <button onClick={onLeave} className="flex-1 py-2.5 rounded-xl border border-[rgba(0,212,255,0.15)] text-[#6b7f8a] hover:text-white hover:border-[rgba(0,212,255,0.3)] transition-all text-sm font-medium">
             Quitter
           </button>
           {isCreator && (
@@ -280,7 +288,7 @@ function VictoryScreen({ gameState, myPosition, onLeave }: { gameState: GameStat
         <div className={`absolute top-1/3 left-1/3 w-[600px] h-[600px] rounded-full blur-[200px] ${iWon ? 'bg-[#00D4FF]/10' : 'bg-red-500/5'}`} />
       </div>
 
-      <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring' }} className="premium-card rounded-3xl p-10 text-center relative z-10 max-w-md">
+      <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring' }} className="premium-card rounded-3xl p-10 text-center relative z-10 max-w-[520px]">
         <motion.div initial={{ rotate: -10, scale: 0 }} animate={{ rotate: 0, scale: 1 }} transition={{ delay: 0.2, type: 'spring' }} className="text-7xl mb-4">
           {iWon ? '🏆' : '💫'}
         </motion.div>

@@ -74,7 +74,6 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: 'Seul le créateur peut démarrer' }, { status: 403 });
         }
         if (room.players.length < 4) {
-          // Auto-fill with bots
           gameManager.fillWithBots(room);
         }
         const gameState = gameManager.startGame(roomId);
@@ -96,7 +95,6 @@ export async function POST(req: NextRequest) {
           playable = getPlayableCards(hand, gs.currentTrick, gs.trumpSuit, playerIdx).map(c => c.id);
         }
 
-        // Annonces
         const announcements = gameManager.gameAnnouncements.get(gs.id) || [];
 
         return NextResponse.json({
@@ -123,8 +121,9 @@ export async function POST(req: NextRequest) {
       }
 
       case 'play_card': {
-        const { roomId, playerIndex, cardId } = body;
-        const gs = gameManager.handlePlayCard(roomId, playerIndex, cardId);
+        const { roomId, playerIndex, cardId, playerId } = body;
+        // SECURITY FIX: Pass playerId to verify identity
+        const gs = gameManager.handlePlayCard(roomId, playerIndex, cardId, playerId);
         if (!gs) return NextResponse.json({ error: 'Coup invalide' }, { status: 400 });
         return NextResponse.json({ success: true });
       }
